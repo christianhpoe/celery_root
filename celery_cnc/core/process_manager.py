@@ -36,13 +36,25 @@ _MONITOR_INTERVAL = 1.0
 _HEARTBEAT_INTERVAL = 60.0
 
 
+def _metrics_url(config: CeleryCnCConfig) -> str:
+    host = config.web_host or "127.0.0.1"
+    if host in {"0.0.0.0", "::"}:  # noqa: S104
+        host = "127.0.0.1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    path = config.prometheus_path or "/metrics"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"http://{host}:{config.prometheus_port}{path}"
+
+
 class _WebServerProcess(Process):
     def __init__(self, host: str, port: int, config: CeleryCnCConfig) -> None:
         """Create a web server process wrapper."""
         super().__init__(daemon=True)
         self._host = host
         self._port = port
-        self._config = config
+        self._cnc_config = config
         self._stop_event = Event()
 
     def stop(self) -> None:
@@ -51,8 +63,8 @@ class _WebServerProcess(Process):
 
     def run(self) -> None:
         """Run the web UI development server."""
-        set_settings(self._config)
-        configure_process_logging(self._config, component="web")
+        set_settings(self._cnc_config)
+        configure_process_logging(self._cnc_config, component="web")
         logger = logging.getLogger(__name__)
         logger.info("Web server starting on %s:%s", self._host, self._port)
 
@@ -76,7 +88,7 @@ class _ExporterProcess(Process):
         """Create a process to host a monitoring exporter."""
         super().__init__(daemon=True)
         self._exporter_factory = exporter_factory
-        self._config = config
+        self._cnc_config = config
         self._component = component
         self._stop_event = Event()
 
@@ -86,12 +98,14 @@ class _ExporterProcess(Process):
 
     def run(self) -> None:
         """Run the exporter and keep it alive until stopped."""
-        set_settings(self._config)
-        configure_process_logging(self._config, component=self._component)
+        set_settings(self._cnc_config)
+        configure_process_logging(self._cnc_config, component=self._component)
         logger = logging.getLogger(__name__)
         logger.info("Exporter process starting (%s).", self._component)
         exporter = self._exporter_factory()
         exporter.serve()
+        if isinstance(exporter, PrometheusExporter):
+            print(f"Prometheus metrics available at {_metrics_url(self._cnc_config)}")  # noqa: T201
         last_heartbeat = time.monotonic()
         while not self._stop_event.is_set():
             time.sleep(1.0)
@@ -219,7 +233,7 @@ class ProcessManager:
         if self._config.prometheus:
             self._process_factories["prometheus"] = functools.partial(
                 _ExporterProcess,
-                lambda: PrometheusExporter(port=self._config.prometheus_port),
+                functools.partial(PrometheusExporter, port=self._config.prometheus_port),
                 self._config,
                 "prometheus",
             )

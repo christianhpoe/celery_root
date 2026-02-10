@@ -18,7 +18,7 @@ def main() -> None:
         purge_db=True,
         schedule_path=Path("./demo/data/schedule.beat"),
         delete_schedules_on_boot=True,
-        prometheus=False,
+        prometheus=True,
         prometheus_path="/metrics",
         opentelemetry=False,
         mcp_enabled=True,
