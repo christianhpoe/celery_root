@@ -43,11 +43,13 @@ STATE_BADGES = {
     "STARTED": "badge-warning",
     "RETRY": "badge-warning",
     "PENDING": "badge-info",
+    "RECEIVED": "badge-info",
     "REVOKED": "badge-muted",
 }
 
 STATE_OPTIONS: Sequence[tuple[str, str]] = (
     ("PENDING", "Pending"),
+    ("RECEIVED", "Received"),
     ("STARTED", "Started"),
     ("SUCCESS", "Success"),
     ("FAILURE", "Failure"),

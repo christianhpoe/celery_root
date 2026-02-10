@@ -53,6 +53,17 @@ class CeleryCnCConfig(BaseSettings):
     poll_interval: float = Field(default=2.0, gt=0)
     secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
 
+    basic_auth: str | None = None
+    auth_provider: str | None = None
+    auth: str | None = None
+    oauth2_key: str | None = None
+    oauth2_secret: str | None = None
+    oauth2_redirect_uri: str | None = None
+    oauth2_okta_base_url: str | None = None
+    gitlab_allowed_groups: str | None = None
+    gitlab_min_access_level: int | None = Field(default=None, ge=1)
+    gitlab_oauth_domain: str | None = None
+
     integration: bool = False
 
     @field_validator("db_path", "log_dir", "schedule_path", mode="after")

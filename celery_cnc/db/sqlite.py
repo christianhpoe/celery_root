@@ -44,9 +44,9 @@ from .models import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from sqlite3 import Connection
+    from sqlite3 import Connection as SQLiteConnection
 
-    from sqlalchemy.engine import Engine
+    from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.sql import Select
     from sqlalchemy.sql.elements import ColumnElement
 
@@ -58,7 +58,7 @@ _BROKER_URL_SCHEMA_VERSION = 3
 _STAMPS_SCHEMA_VERSION = 4
 
 
-def _configure_sqlite(dbapi_connection: Connection, _connection_record: object) -> None:
+def _configure_sqlite(dbapi_connection: SQLiteConnection, _connection_record: object) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
@@ -172,15 +172,16 @@ class SQLiteController(BaseDBController):
     def store_task_event(self, event: TaskEvent) -> None:
         """Persist a task event and update the task record."""
         event_values = self._event_values(event)
-        task_values = self._task_values_from_event(event)
-        update_values = dict(task_values)
-        update_values.pop("task_id", None)
-        stmt = sqlite_insert(self._tasks).values(**task_values)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[self._tasks.c.task_id],
-            set_=update_values,
-        )
         with self._engine.begin() as conn:
+            existing_state = self._get_task_state(conn, event.task_id)
+            task_values = self._task_values_from_event(event, existing_state)
+            update_values = dict(task_values)
+            update_values.pop("task_id", None)
+            stmt = sqlite_insert(self._tasks).values(**task_values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[self._tasks.c.task_id],
+                set_=update_values,
+            )
             conn.execute(self._task_events.insert().values(**event_values))
             conn.execute(stmt)
 
@@ -552,34 +553,54 @@ class SQLiteController(BaseDBController):
             "chord_id": event.chord_id,
         }
 
-    def _task_values_from_event(self, event: TaskEvent) -> dict[str, object]:
+    def _task_values_from_event(self, event: TaskEvent, existing_state: str | None) -> dict[str, object]:
         values: dict[str, object] = {
             "task_id": event.task_id,
             "state": event.state,
         }
-        updates = {
-            "name": event.name,
-            "worker": event.worker,
-            "args": event.args,
-            "kwargs": event.kwargs,
-            "result": event.result,
-            "traceback": event.traceback,
-            "stamps": event.stamps,
-            "runtime": event.runtime,
-            "retries": event.retries,
-            "parent_id": event.parent_id,
-            "root_id": event.root_id,
-            "group_id": event.group_id,
-            "chord_id": event.chord_id,
-        }
-        values.update({field_name: value for field_name, value in updates.items() if value is not None})
-        if event.state in {"RECEIVED", "PENDING"}:
-            values["received"] = event.timestamp
-        elif event.state == "STARTED":
-            values["started"] = event.timestamp
-        elif event.state in _FINAL_STATES:
-            values["finished"] = event.timestamp
+        preserve = existing_state is not None and self._should_preserve_state(existing_state, event.state)
+        if preserve:
+            values["state"] = existing_state
+        else:
+            updates = {
+                "name": event.name,
+                "worker": event.worker,
+                "args": event.args,
+                "kwargs": event.kwargs,
+                "result": event.result,
+                "traceback": event.traceback,
+                "stamps": event.stamps,
+                "runtime": event.runtime,
+                "retries": event.retries,
+                "parent_id": event.parent_id,
+                "root_id": event.root_id,
+                "group_id": event.group_id,
+                "chord_id": event.chord_id,
+            }
+            values.update({field_name: value for field_name, value in updates.items() if value is not None})
+            if event.state in {"RECEIVED", "PENDING"}:
+                values["received"] = event.timestamp
+            elif event.state == "STARTED":
+                values["started"] = event.timestamp
+            elif event.state in _FINAL_STATES:
+                values["finished"] = event.timestamp
         return values
+
+    def _get_task_state(self, conn: Connection, task_id: str) -> str | None:
+        row = conn.execute(
+            select(self._tasks.c.state).where(self._tasks.c.task_id == task_id),
+        ).first()
+        if row is None or row[0] is None:
+            return None
+        return str(row[0])
+
+    @staticmethod
+    def _should_preserve_state(existing_state: str, incoming_state: str) -> bool:
+        if existing_state in _FINAL_STATES and incoming_state not in _FINAL_STATES:
+            return True
+        if existing_state == "STARTED" and incoming_state in {"PENDING", "RECEIVED"}:
+            return True
+        return existing_state == "RECEIVED" and incoming_state == "PENDING"
 
     @staticmethod
     def _row_to_task(row: Mapping[str, object]) -> Task:

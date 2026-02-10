@@ -343,31 +343,42 @@ class MemoryController(BaseDBController):
 
     @staticmethod
     def _apply_task_event(task: Task, event: TaskEvent) -> None:
-        task.state = event.state
-        updates = {
-            "name": event.name,
-            "worker": event.worker,
-            "args": event.args,
-            "kwargs": event.kwargs,
-            "result": event.result,
-            "traceback": event.traceback,
-            "stamps": event.stamps,
-            "runtime": event.runtime,
-            "retries": event.retries,
-            "parent_id": event.parent_id,
-            "root_id": event.root_id,
-            "group_id": event.group_id,
-            "chord_id": event.chord_id,
-        }
-        for field_name, value in updates.items():
-            if value is not None:
-                setattr(task, field_name, value)
-        if event.state == "RECEIVED" or (event.state == "PENDING" and task.received is None):
-            task.received = event.timestamp
-        elif event.state == "STARTED":
-            task.started = event.timestamp
-        elif event.state in _FINAL_STATES:
-            task.finished = event.timestamp
+        preserve = MemoryController._should_preserve_state(task.state, event.state)
+        if not preserve:
+            task.state = event.state
+        if not preserve:
+            updates = {
+                "name": event.name,
+                "worker": event.worker,
+                "args": event.args,
+                "kwargs": event.kwargs,
+                "result": event.result,
+                "traceback": event.traceback,
+                "stamps": event.stamps,
+                "runtime": event.runtime,
+                "retries": event.retries,
+                "parent_id": event.parent_id,
+                "root_id": event.root_id,
+                "group_id": event.group_id,
+                "chord_id": event.chord_id,
+            }
+            for field_name, value in updates.items():
+                if value is not None:
+                    setattr(task, field_name, value)
+            if event.state == "RECEIVED" or (event.state == "PENDING" and task.received is None):
+                task.received = event.timestamp
+            elif event.state == "STARTED":
+                task.started = event.timestamp
+            elif event.state in _FINAL_STATES:
+                task.finished = event.timestamp
+
+    @staticmethod
+    def _should_preserve_state(existing_state: str, incoming_state: str) -> bool:
+        if existing_state in _FINAL_STATES and incoming_state not in _FINAL_STATES:
+            return True
+        if existing_state == "STARTED" and incoming_state in {"PENDING", "RECEIVED"}:
+            return True
+        return existing_state == "RECEIVED" and incoming_state == "PENDING"
 
     def _task_matches(self, task: Task, filters: TaskFilter) -> bool:
         matches = True

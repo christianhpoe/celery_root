@@ -10,7 +10,7 @@
     solaris: "Solaris",
   };
   const root = document.documentElement;
-  let activeTheme = "monokai";
+  let activeTheme = "white";
 
   function normalizeTheme(theme) {
     if (theme && Object.prototype.hasOwnProperty.call(themes, theme)) {
@@ -20,7 +20,7 @@
   }
 
   function applyTheme(theme) {
-    const normalized = normalizeTheme(theme) || "monokai";
+    const normalized = normalizeTheme(theme) || "white";
     activeTheme = normalized;
     root.setAttribute("data-theme", normalized);
   }
@@ -30,7 +30,7 @@
     if (stored) {
       return stored;
     }
-    return "monokai";
+    return "white";
   }
 
   function setTheme(theme, persist) {

@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from django.urls import path
 
-from .views import api, beat, broker, dashboard, errors, graphs, logs, settings, tasks, workers
+from . import auth
+from .views import api, beat, broker, dashboard, errors, graphs, logs, settings, system, tasks, workers
 
 urlpatterns = [
+    path("login", auth.login, name="login"),
+    path("logout", auth.logout, name="logout"),
+    path("healthcheck", system.healthcheck, name="healthcheck"),
+    path("metrics", system.metrics, name="metrics"),
     path("", dashboard.dashboard, name="dashboard"),
     path("dashboard/fragment/", dashboard.dashboard_fragment, name="dashboard-fragment"),
     path("tasks/", tasks.task_list, name="tasks"),

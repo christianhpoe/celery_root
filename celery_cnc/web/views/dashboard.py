@@ -106,6 +106,15 @@ def _task_timestamp(task: Task) -> datetime | None:
     return task.finished or task.started or task.received
 
 
+def _collapse_received(counts: dict[str, int]) -> dict[str, int]:
+    if "RECEIVED" not in counts:
+        return counts
+    collapsed = dict(counts)
+    collapsed["PENDING"] = collapsed.get("PENDING", 0) + collapsed.get("RECEIVED", 0)
+    collapsed.pop("RECEIVED", None)
+    return collapsed
+
+
 def _format_delta(delta: int | None, *, suffix: str) -> str:
     if delta is None:
         return "no data yet"
@@ -268,6 +277,9 @@ def _state_cards(now: datetime) -> Sequence[_StateCard]:
 
     last_counts = _count_by_state(last_tasks)
     prev_counts = _count_by_state(prev_tasks)
+    current_counts = _collapse_received(current_counts)
+    last_counts = _collapse_received(last_counts)
+    prev_counts = _collapse_received(prev_counts)
 
     def _delta(state: str) -> str:
         diff = last_counts.get(state, 0) - prev_counts.get(state, 0)
@@ -355,7 +367,7 @@ def _worker_summary(now: datetime) -> list[_WorkerSummary]:
             continue
         if task.worker not in counts:
             continue
-        state = task.state
+        state = "PENDING" if task.state == "RECEIVED" else task.state
         if state in counts[task.worker]:
             counts[task.worker][state] += 1
 

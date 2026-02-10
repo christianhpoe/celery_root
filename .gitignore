@@ -17,6 +17,7 @@ node_modules/
 *.db-wal
 .db-shm
 .db-wal
+*.sqlite3
 celerybeat-schedule
 celerybeat-schedule.*
 logs/
