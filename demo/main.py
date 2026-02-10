@@ -14,7 +14,7 @@ def main() -> None:
     """Start the CnC supervisor and dev web server."""
     config = CeleryCnCConfig(
         log_dir=Path("./demo/data/logs"),
-        db_path=Path("./demo/data/db.sqlite"),
+        db_path=Path("./demo/data/sqlite3.db"),
         purge_db=True,
         schedule_path=Path("./demo/data/schedule.beat"),
         delete_schedules_on_boot=True,

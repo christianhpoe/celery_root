@@ -28,7 +28,7 @@ def controller(request: pytest.FixtureRequest, tmp_path: Path) -> Generator[Base
     if request.param == "memory":
         ctrl: BaseDBController = MemoryController()
     else:
-        ctrl = SQLiteController(tmp_path / "db.sqlite3")
+        ctrl = SQLiteController(tmp_path / "sqlite3.db")
     ctrl.initialize()
     yield ctrl
     ctrl.close()

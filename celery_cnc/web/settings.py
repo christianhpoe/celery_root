@@ -50,7 +50,7 @@ ASGI_APPLICATION = "celery_cnc.web.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(BASE_DIR / "db.sqlite3"),
+        "NAME": str(BASE_DIR / "sqlite3.db"),
     },
 }
 
