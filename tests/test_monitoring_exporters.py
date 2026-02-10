@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from prometheus_client import CollectorRegistry
 
@@ -48,6 +48,15 @@ def test_prometheus_exporter_records_metrics() -> None:
         },
     )
     assert runtime_count == 1
+    runtime_by_task_count = registry.get_sample_value(
+        "celery_cnc_task_runtime_by_task_seconds_count",
+        labels={
+            "task": "demo.add",
+            "broker": "unknown",
+            "backend": "unknown",
+        },
+    )
+    assert runtime_by_task_count == 1
 
     online = registry.get_sample_value(
         "celery_cnc_worker_online",
@@ -58,6 +67,82 @@ def test_prometheus_exporter_records_metrics() -> None:
         },
     )
     assert online == 1
+
+
+def test_prometheus_exporter_records_queue_latency_and_failures() -> None:
+    registry = CollectorRegistry()
+    exporter = PrometheusExporter(registry=registry)
+    base = datetime.now(UTC)
+
+    exporter.on_task_event(
+        TaskEvent(
+            task_id="t3",
+            name="demo.add",
+            state="RECEIVED",
+            timestamp=base,
+            worker="w1",
+        ),
+    )
+    exporter.on_task_event(
+        TaskEvent(
+            task_id="t3",
+            name="demo.add",
+            state="STARTED",
+            timestamp=base + timedelta(seconds=2),
+            worker="w1",
+        ),
+    )
+    exporter.on_task_event(
+        TaskEvent(
+            task_id="t3",
+            name="demo.add",
+            state="FAILURE",
+            timestamp=base + timedelta(seconds=3),
+            worker="w1",
+        ),
+    )
+    exporter.on_task_event(
+        TaskEvent(
+            task_id="t3",
+            name="demo.add",
+            state="RETRY",
+            timestamp=base + timedelta(seconds=4),
+            worker="w1",
+        ),
+    )
+
+    latency_count = registry.get_sample_value(
+        "celery_cnc_task_queue_latency_seconds_count",
+        labels={
+            "task": "demo.add",
+            "worker": "w1",
+            "broker": "unknown",
+            "backend": "unknown",
+        },
+    )
+    assert latency_count == 1
+
+    failures = registry.get_sample_value(
+        "celery_cnc_task_failures_total",
+        labels={
+            "task": "demo.add",
+            "worker": "w1",
+            "broker": "unknown",
+            "backend": "unknown",
+        },
+    )
+    assert failures == 1
+
+    retries = registry.get_sample_value(
+        "celery_cnc_task_retries_total",
+        labels={
+            "task": "demo.add",
+            "worker": "w1",
+            "broker": "unknown",
+            "backend": "unknown",
+        },
+    )
+    assert retries == 1
 
 
 def test_prometheus_exporter_flower_compatibility_prefix() -> None:

@@ -92,10 +92,29 @@ class PrometheusExporter(BaseMonitoringExporter):
             ("task", "type", "worker", "broker", "backend"),
             registry=self.registry,
         )
+        self._task_failures = Counter(
+            f"{self._metric_prefix}_task_failures_total",
+            "Number of failed tasks.",
+            ("task", "worker", "broker", "backend"),
+            registry=self.registry,
+        )
+        self._task_retries = Counter(
+            f"{self._metric_prefix}_task_retries_total",
+            "Number of retried tasks.",
+            ("task", "worker", "broker", "backend"),
+            registry=self.registry,
+        )
         self._task_runtime = Histogram(
             f"{self._metric_prefix}_task_runtime_seconds",
             "Task runtime",
             ("task", "worker", "broker", "backend"),
+            registry=self.registry,
+            buckets=_FLOWER_RUNTIME_BUCKETS,
+        )
+        self._task_runtime_by_task = Histogram(
+            f"{self._metric_prefix}_task_runtime_by_task_seconds",
+            "Task runtime aggregated by task name.",
+            ("task", "broker", "backend"),
             registry=self.registry,
             buckets=_FLOWER_RUNTIME_BUCKETS,
         )
@@ -104,6 +123,13 @@ class PrometheusExporter(BaseMonitoringExporter):
             "The time the task spent waiting at the celery worker to be executed.",
             ("task", "worker", "broker", "backend"),
             registry=self.registry,
+        )
+        self._task_queue_latency = Histogram(
+            f"{self._metric_prefix}_task_queue_latency_seconds",
+            "Time between task received and started.",
+            ("task", "worker", "broker", "backend"),
+            registry=self.registry,
+            buckets=_FLOWER_RUNTIME_BUCKETS,
         )
         self._prefetched_tasks = Gauge(
             f"{self._metric_prefix}_worker_prefetched_tasks",
@@ -114,6 +140,12 @@ class PrometheusExporter(BaseMonitoringExporter):
         self._worker_online = Gauge(
             f"{self._metric_prefix}_worker_online",
             "Worker online status",
+            ("worker", "broker", "backend"),
+            registry=self.registry,
+        )
+        self._worker_last_heartbeat = Gauge(
+            f"{self._metric_prefix}_worker_last_heartbeat_timestamp_seconds",
+            "Last worker heartbeat timestamp in seconds since epoch.",
             ("worker", "broker", "backend"),
             registry=self.registry,
         )
@@ -136,8 +168,15 @@ class PrometheusExporter(BaseMonitoringExporter):
         state = event.state.upper()
         event_type = _TASK_EVENT_TYPE_BY_STATE.get(state, f"task-{state.lower()}")
         self._event_counter.labels(**self._task_labels(task_name, worker, event_type)).inc()
+        if state == "FAILURE":
+            self._task_failures.labels(**self._task_labels(task_name, worker)).inc()
+        if state == "RETRY":
+            self._task_retries.labels(**self._task_labels(task_name, worker)).inc()
         if event.runtime is not None:
             self._task_runtime.labels(**self._task_labels(task_name, worker)).observe(event.runtime)
+            self._task_runtime_by_task.labels(**self._task_summary_labels(task_name, worker)).observe(
+                event.runtime,
+            )
         self._track_task_state(event, task_name, worker, state)
 
     def on_worker_event(self, event: WorkerEvent) -> None:
@@ -148,6 +187,7 @@ class PrometheusExporter(BaseMonitoringExporter):
         normalized = event.event.lower()
         if normalized in {"worker-online", "online", "worker-heartbeat", "heartbeat"}:
             self._worker_online.labels(**labels).set(1)
+            self._worker_last_heartbeat.labels(**labels).set(event.timestamp.timestamp())
         elif normalized in {"worker-offline", "offline"}:
             self._worker_online.labels(**labels).set(0)
 
@@ -194,6 +234,7 @@ class PrometheusExporter(BaseMonitoringExporter):
             if prefetch_seconds < 0:
                 prefetch_seconds = 0.0
             self._task_prefetch.labels(**self._task_labels(task_name, worker)).set(prefetch_seconds)
+            self._task_queue_latency.labels(**self._task_labels(task_name, worker)).observe(prefetch_seconds)
 
         if state in _TERMINAL_TASK_STATES:
             self._task_trackers.pop(task_id, None)
@@ -236,6 +277,13 @@ class PrometheusExporter(BaseMonitoringExporter):
         if event_type is not None:
             labels["type"] = event_type
         return labels
+
+    def _task_summary_labels(self, task: str, worker: str) -> dict[str, str]:
+        return {
+            "task": task,
+            "broker": self._broker_label(worker),
+            "backend": self._backend_label(worker),
+        }
 
     def _worker_labels(self, worker: str) -> dict[str, str]:
         return {
