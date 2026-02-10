@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import rmtree
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -19,6 +20,7 @@ class LoggingConfigFile(BaseModel):
     log_dir: Path = Path("logs")
     log_rotation_hours: int = Field(default=24, gt=0)
     log_level: str = "INFO"
+    delete_on_boot: bool = False
 
     @field_validator("log_dir", mode="after")
     @classmethod
@@ -27,6 +29,12 @@ class LoggingConfigFile(BaseModel):
 
     @model_validator(mode="after")
     def _ensure_log_dir(self) -> LoggingConfigFile:
+        if self.delete_on_boot and self.log_dir.exists():
+            for entry in self.log_dir.iterdir():
+                if entry.is_dir():
+                    rmtree(entry)
+                else:
+                    entry.unlink(missing_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         return self
 
@@ -82,6 +90,7 @@ class PrometheusConfig(BaseModel):
 
     port: int = Field(default=8001, ge=1, le=MAX_PORT)
     prometheus_path: str = "/metrics"
+    flower_comatibility: bool = False
 
     @field_validator("prometheus_path", mode="after")
     @classmethod
@@ -89,6 +98,11 @@ class PrometheusConfig(BaseModel):
         if not value:
             return "/metrics"
         return value if value.startswith("/") else f"/{value}"
+
+    @property
+    def flower_compatibility(self) -> bool:
+        """Return whether to use Flower metric naming."""
+        return self.flower_comatibility
 
 
 class OpenTelemetryConfig(BaseModel):

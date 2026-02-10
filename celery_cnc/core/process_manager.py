@@ -252,6 +252,7 @@ class ProcessManager:
                     PrometheusExporter,
                     port=self._config.prometheus.port,
                     broker_backend_map=backend_map,
+                    flower_compatibility=self._config.prometheus.flower_compatibility,
                 ),
                 self._config,
                 "prometheus",

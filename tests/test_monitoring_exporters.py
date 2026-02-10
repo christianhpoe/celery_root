@@ -27,7 +27,7 @@ def test_prometheus_exporter_records_metrics() -> None:
     exporter.update_stats(TaskStats(min_runtime=0.1, max_runtime=1.0, avg_runtime=0.4, p95=0.8, p99=0.95))
 
     total = registry.get_sample_value(
-        "flower_events_total",
+        "celery_cnc_events_total",
         labels={
             "task": "demo.add",
             "type": "task-succeeded",
@@ -39,7 +39,7 @@ def test_prometheus_exporter_records_metrics() -> None:
     assert total == 1
 
     runtime_count = registry.get_sample_value(
-        "flower_task_runtime_seconds_count",
+        "celery_cnc_task_runtime_seconds_count",
         labels={
             "task": "demo.add",
             "worker": "w1",
@@ -50,7 +50,7 @@ def test_prometheus_exporter_records_metrics() -> None:
     assert runtime_count == 1
 
     online = registry.get_sample_value(
-        "flower_worker_online",
+        "celery_cnc_worker_online",
         labels={
             "worker": "w1",
             "broker": "unknown",
@@ -58,6 +58,34 @@ def test_prometheus_exporter_records_metrics() -> None:
         },
     )
     assert online == 1
+
+
+def test_prometheus_exporter_flower_compatibility_prefix() -> None:
+    registry = CollectorRegistry()
+    exporter = PrometheusExporter(registry=registry, flower_compatibility=True)
+
+    exporter.on_task_event(
+        TaskEvent(
+            task_id="t1",
+            name="demo.add",
+            state="SUCCESS",
+            timestamp=datetime.now(UTC),
+            worker="w1",
+            runtime=0.25,
+        ),
+    )
+
+    total = registry.get_sample_value(
+        "flower_events_total",
+        labels={
+            "task": "demo.add",
+            "type": "task-succeeded",
+            "worker": "w1",
+            "broker": "unknown",
+            "backend": "unknown",
+        },
+    )
+    assert total == 1
 
 
 def test_otel_exporter_records_spans() -> None:

@@ -74,6 +74,7 @@ class PrometheusExporter(BaseMonitoringExporter):
         port: int | None = None,
         registry: CollectorRegistry | None = None,
         broker_backend_map: Mapping[str, str] | None = None,
+        flower_compatibility: bool = False,
     ) -> None:
         """Initialize metrics and optionally start the HTTP server."""
         self.registry = registry or CollectorRegistry()
@@ -83,40 +84,41 @@ class PrometheusExporter(BaseMonitoringExporter):
         self._task_trackers: dict[str, _TaskTracker] = {}
         self._prefetched_counts: dict[tuple[str, str], int] = {}
         self._active_counts: dict[str, int] = {}
+        self._metric_prefix = "flower" if flower_compatibility else "celery_cnc"
 
         self._event_counter = Counter(
-            "flower_events",
+            f"{self._metric_prefix}_events",
             "Number of events",
             ("task", "type", "worker", "broker", "backend"),
             registry=self.registry,
         )
         self._task_runtime = Histogram(
-            "flower_task_runtime_seconds",
+            f"{self._metric_prefix}_task_runtime_seconds",
             "Task runtime",
             ("task", "worker", "broker", "backend"),
             registry=self.registry,
             buckets=_FLOWER_RUNTIME_BUCKETS,
         )
         self._task_prefetch = Gauge(
-            "flower_task_prefetch_time_seconds",
+            f"{self._metric_prefix}_task_prefetch_time_seconds",
             "The time the task spent waiting at the celery worker to be executed.",
             ("task", "worker", "broker", "backend"),
             registry=self.registry,
         )
         self._prefetched_tasks = Gauge(
-            "flower_worker_prefetched_tasks",
+            f"{self._metric_prefix}_worker_prefetched_tasks",
             "Number of tasks of given type prefetched at a worker.",
             ("task", "worker", "broker", "backend"),
             registry=self.registry,
         )
         self._worker_online = Gauge(
-            "flower_worker_online",
+            f"{self._metric_prefix}_worker_online",
             "Worker online status",
             ("worker", "broker", "backend"),
             registry=self.registry,
         )
         self._worker_current = Gauge(
-            "flower_worker_number_of_currently_executing_tasks",
+            f"{self._metric_prefix}_worker_number_of_currently_executing_tasks",
             "Number of tasks currently executing at a worker",
             ("worker", "broker", "backend"),
             registry=self.registry,
