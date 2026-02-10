@@ -41,6 +41,7 @@ export interface GraphNodePayload {
   parent_id: string | null;
   root_id: string | null;
   kind?: string | null;
+  folded_latest_id?: string | null;
 }
 
 export interface GraphEdgePayload {
@@ -48,6 +49,7 @@ export interface GraphEdgePayload {
   source: string;
   target: string;
   kind?: "chain" | "group" | "chord" | "map" | "starmap" | "chunks" | "link_error" | "retry" | string;
+  label?: string;
 }
 
 export interface GraphPayload {

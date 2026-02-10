@@ -17,6 +17,7 @@ export interface GraphModel {
   meta: GraphMeta;
   nodes: Map<string, GraphNodePayload>;
   edges: GraphEdgePayload[];
+  folded?: FoldedInfo;
 }
 
 export interface TaskNodeData {
@@ -41,6 +42,7 @@ export interface TaskNodeData {
   isVirtual: boolean;
   showMeta: boolean;
   handleDirection: "RIGHT" | "DOWN";
+  foldedLatestId: string | null;
 }
 
 export interface GroupNodeData {
@@ -48,6 +50,11 @@ export interface GroupNodeData {
   label: string;
   kind: string | null;
   count: number;
+}
+
+export interface FoldedInfo {
+  childToRoot: Map<string, string>;
+  latestChildByRoot: Map<string, string>;
 }
 
 export type GraphFlowNode = Node<TaskNodeData> | Node<GroupNodeData>;
@@ -80,11 +87,11 @@ export function buildGraphModel(payload: GraphPayload): GraphModel {
   const normalized = normalizePayload(payload);
   const nodes = new Map<string, GraphNodePayload>();
   normalized.nodes.forEach((node) => nodes.set(node.id, node));
-  return {
+  return foldSelfScheduling({
     meta: normalized.meta,
     nodes,
     edges: normalized.edges,
-  };
+  });
 }
 
 export function computeCounts(nodes: Iterable<GraphNodePayload>): GraphMetaCounts {
@@ -123,6 +130,207 @@ export function computeCounts(nodes: Iterable<GraphNodePayload>): GraphMetaCount
   return counts;
 }
 
+const SELF_SCHEDULE_EXCLUDED_KINDS = new Set(["group", "chord", "map", "starmap", "chunks"]);
+
+function isFoldableTask(node: GraphNodePayload | undefined): node is GraphNodePayload {
+  if (!node) {
+    return false;
+  }
+  if (!node.task_name) {
+    return false;
+  }
+  if (!node.state && node.kind) {
+    return false;
+  }
+  return true;
+}
+
+function buildSignature(node: GraphNodePayload): string {
+  return `${node.task_name ?? ""}::${node.args_preview ?? ""}::${node.kwargs_preview ?? ""}`;
+}
+
+function nodeTimestamp(node: GraphNodePayload): number {
+  const value = node.finished_at ?? node.started_at ?? "";
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function foldSelfScheduling(model: GraphModel): GraphModel {
+  const { nodes, edges } = model;
+  const matchingChildren = new Map<string, Set<string>>();
+  const matchingParents = new Map<string, Set<string>>();
+  const matchingEdgeKeys = new Set<string>();
+
+  for (const edge of edges) {
+    const kind = edge.kind ?? "chain";
+    if (SELF_SCHEDULE_EXCLUDED_KINDS.has(kind)) {
+      continue;
+    }
+    if (edge.source === edge.target) {
+      continue;
+    }
+    const parent = nodes.get(edge.source);
+    const child = nodes.get(edge.target);
+    if (!isFoldableTask(parent) || !isFoldableTask(child)) {
+      continue;
+    }
+    if (buildSignature(parent) !== buildSignature(child)) {
+      continue;
+    }
+    matchingEdgeKeys.add(`${edge.source}::${edge.target}`);
+    const children = matchingChildren.get(edge.source);
+    if (children) {
+      children.add(edge.target);
+    } else {
+      matchingChildren.set(edge.source, new Set([edge.target]));
+    }
+    const parents = matchingParents.get(edge.target);
+    if (parents) {
+      parents.add(edge.source);
+    } else {
+      matchingParents.set(edge.target, new Set([edge.source]));
+    }
+  }
+
+  if (matchingEdgeKeys.size === 0) {
+    return model;
+  }
+
+  const parentIds = new Set<string>(matchingChildren.keys());
+  const childIds = new Set<string>(matchingParents.keys());
+  const roots: string[] = [];
+  for (const parentId of parentIds) {
+    if (!childIds.has(parentId)) {
+      roots.push(parentId);
+    }
+  }
+
+  const childToRoot = new Map<string, string>();
+  const latestChildByRoot = new Map<string, string>();
+  const childrenByRoot = new Map<string, Set<string>>();
+
+  const collect = (rootId: string) => {
+    const queue: string[] = [rootId];
+    const seen = new Set<string>([rootId]);
+    const children = new Set<string>();
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        continue;
+      }
+      const next = matchingChildren.get(current);
+      if (!next) {
+        continue;
+      }
+      for (const child of next) {
+        if (child === rootId || seen.has(child)) {
+          continue;
+        }
+        seen.add(child);
+        children.add(child);
+        childToRoot.set(child, rootId);
+        queue.push(child);
+      }
+    }
+    if (children.size === 0) {
+      return;
+    }
+    childrenByRoot.set(rootId, children);
+    let latestId: string | null = null;
+    let latestTime = Number.NEGATIVE_INFINITY;
+    for (const childId of children) {
+      const node = nodes.get(childId);
+      if (!node) {
+        continue;
+      }
+      const ts = nodeTimestamp(node);
+      if (ts >= latestTime) {
+        latestTime = ts;
+        latestId = childId;
+      }
+    }
+    if (latestId) {
+      latestChildByRoot.set(rootId, latestId);
+    }
+  };
+
+  roots.forEach(collect);
+  for (const parentId of parentIds) {
+    if (!childToRoot.has(parentId) && !childrenByRoot.has(parentId)) {
+      collect(parentId);
+    }
+  }
+
+  if (childToRoot.size === 0) {
+    return model;
+  }
+
+  const newNodes = new Map(nodes);
+  for (const childId of childToRoot.keys()) {
+    newNodes.delete(childId);
+  }
+  for (const [rootId, latestChildId] of latestChildByRoot.entries()) {
+    const rootNode = newNodes.get(rootId);
+    const latestNode = nodes.get(latestChildId);
+    if (!rootNode || !latestNode) {
+      continue;
+    }
+    newNodes.set(rootId, {
+      ...rootNode,
+      ...latestNode,
+      id: rootNode.id,
+      parent_id: rootNode.parent_id,
+      root_id: rootNode.root_id,
+      folded_latest_id: latestChildId,
+    });
+  }
+
+  const newEdges: GraphEdgePayload[] = [];
+  for (const edge of edges) {
+    if (matchingEdgeKeys.has(`${edge.source}::${edge.target}`)) {
+      continue;
+    }
+    const source = childToRoot.get(edge.source) ?? edge.source;
+    const target = childToRoot.get(edge.target) ?? edge.target;
+    if (source === target) {
+      continue;
+    }
+    if (!newNodes.has(source) || !newNodes.has(target)) {
+      continue;
+    }
+    const kind = edge.kind ?? "chain";
+    newEdges.push({
+      ...edge,
+      id: `${source}->${target}:${kind}`,
+      source,
+      target,
+    });
+  }
+
+  for (const [rootId, children] of childrenByRoot.entries()) {
+    if (!newNodes.has(rootId) || children.size === 0) {
+      continue;
+    }
+    newEdges.push({
+      id: `${rootId}->${rootId}:self`,
+      source: rootId,
+      target: rootId,
+      kind: "self",
+      label: String(children.size),
+    });
+  }
+
+  return {
+    meta: model.meta,
+    nodes: newNodes,
+    edges: newEdges,
+    folded: {
+      childToRoot,
+      latestChildByRoot,
+    },
+  };
+}
+
 export function buildTaskNodeData(
   node: GraphNodePayload,
   showMeta: boolean,
@@ -152,6 +360,7 @@ export function buildTaskNodeData(
     isVirtual,
     showMeta,
     handleDirection,
+    foldedLatestId: node.folded_latest_id ?? null,
   };
 }
 
@@ -319,11 +528,12 @@ export function buildReactFlowEdges(
     const uniqueId = count > 0 ? `${id}#${count}` : id;
     const kind = edge.kind ?? "chain";
     const isRunning = runningEdges.has(id);
+    const isSelfLoop = kind === "self";
     return {
       id: uniqueId,
       source: edge.source,
       target: edge.target,
-      type: "smoothstep",
+      type: isSelfLoop ? "selfLoop" : "smoothstep",
       animated: isRunning && !disableAnimations,
       className: [
         `edge-${kind}`,
@@ -331,6 +541,7 @@ export function buildReactFlowEdges(
       ]
         .filter(Boolean)
         .join(" "),
+      label: isSelfLoop ? (edge.label ?? "1") : undefined,
     };
   });
 }

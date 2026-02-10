@@ -16,6 +16,7 @@ import TaskNode from "./components/TaskNode";
 import GroupNode from "./components/GroupNode";
 import Toolbar from "./components/Toolbar";
 import ChordJoinNode from "./components/ChordJoinNode";
+import SelfLoopEdge from "./components/SelfLoopEdge";
 import { layoutNodes, type LayoutDirection } from "./graph/layout";
 import {
   applyGroupLayout,
@@ -176,7 +177,12 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
     );
     const layoutNodeIds = new Set(layoutInput.map((node) => node.id));
     const layoutEdges = filteredModel.edges
-      .filter((edge) => layoutNodeIds.has(edge.source) && layoutNodeIds.has(edge.target))
+      .filter(
+        (edge) =>
+          layoutNodeIds.has(edge.source) &&
+          layoutNodeIds.has(edge.target) &&
+          edge.source !== edge.target,
+      )
       .map((edge) => ({ source: edge.source, target: edge.target }));
     layoutNodes(layoutInput, layoutEdges, direction)
       .then((layouted) => {
@@ -308,12 +314,33 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
       }
       setGraphModel((prev) => {
         const updatedNodes = new Map(prev.nodes);
+        const foldInfo = prev.folded;
         payload.node_updates.forEach((update) => {
-          const current = updatedNodes.get(update.id);
+          const { id, ...rest } = update;
+          let targetId = id;
+          let current = updatedNodes.get(targetId);
+          if (!current && foldInfo) {
+            const rootId = foldInfo.childToRoot.get(id);
+            if (!rootId) {
+              return;
+            }
+            const latestId = foldInfo.latestChildByRoot.get(rootId);
+            if (latestId && latestId !== id) {
+              return;
+            }
+            targetId = rootId;
+            current = updatedNodes.get(targetId);
+          }
           if (!current) {
             return;
           }
-          updatedNodes.set(update.id, { ...current, ...update });
+          updatedNodes.set(targetId, {
+            ...current,
+            ...rest,
+            id: current.id,
+            parent_id: current.parent_id,
+            root_id: current.root_id,
+          });
         });
         return { ...prev, nodes: updatedNodes, meta: { ...prev.meta, counts: payload.meta_counts } };
       });
@@ -394,7 +421,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
     }
     const children = new Set<string>();
     graphModel.edges.forEach((edge) => {
-      if (edge.source === selectedId) {
+      if (edge.source === selectedId && edge.target !== selectedId) {
         children.add(edge.target);
       }
     });
@@ -448,6 +475,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={{ taskNode: TaskNode, chordNode: ChordJoinNode, groupNode: GroupNode }}
+            edgeTypes={{ selfLoop: SelfLoopEdge }}
             fitView
             nodesDraggable
             nodesConnectable={false}

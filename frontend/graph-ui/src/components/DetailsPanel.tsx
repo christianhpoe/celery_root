@@ -40,7 +40,9 @@ export default function DetailsPanel({ node, childrenIds, onClose, taskDetailUrl
     );
   }
 
-  const url = buildTaskUrl(taskDetailUrlTemplate, node.id);
+  const effectiveId = node.foldedLatestId ?? node.id;
+  const showRootId = node.foldedLatestId !== null && node.foldedLatestId !== node.id;
+  const url = buildTaskUrl(taskDetailUrlTemplate, effectiveId);
 
   return (
     <aside className={clsx("dag-panel", node.state ? `state-${node.state.toLowerCase()}` : "")}>
@@ -56,8 +58,14 @@ export default function DetailsPanel({ node, childrenIds, onClose, taskDetailUrl
       <div className="dag-panel-body">
         <div className="dag-panel-row">
           <span className="dag-panel-label">ID</span>
-          <span className="dag-panel-value">{node.id}</span>
+          <span className="dag-panel-value">{effectiveId}</span>
         </div>
+        {showRootId ? (
+          <div className="dag-panel-row">
+            <span className="dag-panel-label">Root ID</span>
+            <span className="dag-panel-value">{node.id}</span>
+          </div>
+        ) : null}
         <div className="dag-panel-row">
           <span className="dag-panel-label">State</span>
           <span className="dag-panel-value">{node.state ?? "—"}</span>

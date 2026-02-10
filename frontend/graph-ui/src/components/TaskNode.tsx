@@ -21,6 +21,13 @@ function formatDuration(durationMs: number | null): string {
   return `${minutes}m ${Math.round(remainder)}s`;
 }
 
+function shortId(value: string): string {
+  if (!value) {
+    return "—";
+  }
+  return value.length > 8 ? value.slice(0, 8) : value;
+}
+
 function TaskNode({ data, selected }: NodeProps<TaskNodeData>) {
   const state = data.state ?? "PENDING";
   const stateLabel = data.state ? STATE_LABELS[state] : data.kind ?? "Pending";
@@ -28,6 +35,7 @@ function TaskNode({ data, selected }: NodeProps<TaskNodeData>) {
   const showMeta = data.showMeta;
   const kindLabel = data.kind ? data.kind.toUpperCase() : null;
   const stampCount = data.stamps.length;
+  const displayId = data.foldedLatestId ?? data.id;
 
   const handlePosition = data.handleDirection === "DOWN" ? Position.Top : Position.Left;
   const handleSourcePosition = data.handleDirection === "DOWN" ? Position.Bottom : Position.Right;
@@ -71,7 +79,7 @@ function TaskNode({ data, selected }: NodeProps<TaskNodeData>) {
       </div>
       {showMeta ? (
         <div className="dag-node-foot">
-          <span>{data.queue ?? "default"}</span>
+          <span>{shortId(displayId)}</span>
           <span>{data.worker ?? "—"}</span>
         </div>
       ) : (
