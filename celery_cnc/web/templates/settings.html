@@ -25,6 +25,30 @@
       </div>
     </form>
   </section>
+
+  <section class="detail-card">
+    <h3>MCP Server</h3>
+    {% if mcp_enabled %}
+      <p class="detail-runtime">MCP is enabled at <strong>{{ mcp_url }}</strong>.</p>
+    {% else %}
+      <p class="detail-runtime">MCP is disabled. Set <code>CELERY_CNC_MCP_ENABLED=1</code> to enable it.</p>
+    {% endif %}
+    <p class="detail-runtime">
+      {% if mcp_auth_configured %}
+        Authentication key is configured. Use your MCP auth key below.
+      {% else %}
+        Configure <code>CELERY_CNC_MCP_AUTH_KEY</code> to protect the MCP server.
+      {% endif %}
+    </p>
+    <p class="detail-runtime">Copy/paste this config into your MCP client:</p>
+    <pre class="detail-runtime"><code>{{ mcp_config_snippet }}</code></pre>
+    <p class="detail-runtime">Codex CLI (HTTP MCP) example:</p>
+    <pre class="detail-runtime"><code>{{ mcp_codex_command }}</code></pre>
+    <p class="detail-runtime">Claude Code (.mcp.json) example:</p>
+    <pre class="detail-runtime"><code>{{ mcp_claude_config_snippet }}</code></pre>
+    <p class="detail-runtime">Claude Code (HTTP MCP) example:</p>
+    <pre class="detail-runtime"><code>{{ mcp_claude_command }}</code></pre>
+  </section>
 {% endblock %}
 
 {% block scripts %}

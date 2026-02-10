@@ -10,9 +10,13 @@ from contextlib import suppress
 from multiprocessing import Event, Process, Queue
 from typing import TYPE_CHECKING
 
+from uvicorn import Config as UvicornConfig
+from uvicorn import Server as UvicornServer
+
 from celery_cnc.config import set_settings
 from celery_cnc.db.manager import DBManager
 from celery_cnc.logging.setup import configure_process_logging
+from celery_cnc.mcp.server import create_asgi_app
 from celery_cnc.monitoring.otel import OTelExporter
 from celery_cnc.monitoring.prometheus import PrometheusExporter
 from celery_cnc.web import devserver
@@ -97,6 +101,45 @@ class _ExporterProcess(Process):
                 last_heartbeat = now
         logger.info("Exporter process stopping (%s).", self._component)
         exporter.shutdown()
+
+
+class _McpServerProcess(Process):
+    def __init__(self, host: str, port: int, config: CeleryCnCConfig) -> None:
+        """Create a MCP server process wrapper."""
+        super().__init__(daemon=True)
+        self._host = host
+        self._port = port
+        self._config = config
+        self._stop_event = Event()
+
+    def stop(self) -> None:
+        """Signal the MCP server to stop."""
+        self._stop_event.set()
+
+    def run(self) -> None:
+        """Run the MCP server."""
+        set_settings(self._config)
+        configure_process_logging(self._config, component="mcp")
+        logger = logging.getLogger(__name__)
+        logger.info("MCP server starting on %s:%s", self._host, self._port)
+        app = create_asgi_app()
+
+        config = UvicornConfig(
+            app=app,
+            host=self._host,
+            port=self._port,
+            log_level=self._config.log_level.lower(),
+            access_log=False,
+        )
+        server = UvicornServer(config=config)
+
+        def _watch_stop() -> None:
+            self._stop_event.wait()
+            server.should_exit = True
+
+        threading.Thread(target=_watch_stop, daemon=True).start()
+        server.run()
+        logger.info("MCP server stopped on %s:%s", self._host, self._port)
 
 
 class ProcessManager:
@@ -192,6 +235,13 @@ class ProcessManager:
                 _WebServerProcess,
                 self._config.web_host,
                 self._config.web_port,
+                self._config,
+            )
+        if self._config.mcp_enabled:
+            self._process_factories["mcp"] = functools.partial(
+                _McpServerProcess,
+                self._config.mcp_host,
+                self._config.mcp_port,
                 self._config,
             )
 

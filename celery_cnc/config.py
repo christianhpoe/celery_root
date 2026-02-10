@@ -66,6 +66,13 @@ class CeleryCnCConfig(BaseSettings):
 
     integration: bool = False
 
+    mcp_enabled: bool = False
+    mcp_auth_key: str | None = None
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = Field(default=9100, ge=1, le=MAX_PORT)
+    mcp_path: str = "/mcp/"
+    mcp_readonly_db_url: str | None = None
+
     @field_validator("db_path", "log_dir", "schedule_path", mode="after")
     @classmethod
     def _expand_paths(cls, value: Path | None) -> Path | None:

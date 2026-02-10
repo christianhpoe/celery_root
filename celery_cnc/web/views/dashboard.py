@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, TypedDict
 
@@ -89,6 +89,20 @@ class _WorkerSummary(TypedDict):
     badge: str
     state_cells: list[_WorkerStateCell]
     last_seen_seconds: int | None
+
+
+class DashboardStats(TypedDict):
+    """Serialized dashboard payload for API consumers."""
+
+    generated_at: str
+    summary_cards: Sequence[_SummaryCard]
+    state_cards: Sequence[_StateCard]
+    state_series: Sequence[_StateSeriesPoint]
+    throughput_series: Sequence[_ThroughputPoint]
+    heatmap: list[list[int]]
+    workers: list[_WorkerSummary]
+    activity_feed: list[dict[str, object]]
+    runtime_stats: dict[str, object]
 
 
 @dataclass(slots=True)
@@ -407,6 +421,37 @@ def activity_feed(now: datetime) -> Sequence[_ActivityItem]:
 def worker_rows(now: datetime) -> list[_WorkerSummary]:
     """Expose worker summary rows for templates and API."""
     return _worker_summary(now)
+
+
+def dashboard_stats(now: datetime | None = None) -> DashboardStats:
+    """Return dashboard metrics in a structured payload."""
+    timestamp = timezone.now() if now is None else now
+    metrics = _compute_metrics(timestamp)
+    state_cards = _state_cards(timestamp)
+    heatmap_range = TimeRange(start=timestamp - timedelta(days=7), end=timestamp)
+    with open_db() as db:
+        heatmap = db.get_heatmap(heatmap_range)
+    activity: list[dict[str, object]] = [
+        {
+            "task": item["task"],
+            "state": item["state"],
+            "badge": item["badge"],
+            "worker": item["worker"],
+            "timestamp": item["timestamp"].isoformat(),
+        }
+        for item in activity_feed(timestamp)
+    ]
+    return {
+        "generated_at": timestamp.isoformat(),
+        "summary_cards": _summary_cards(metrics),
+        "state_cards": state_cards,
+        "state_series": _state_series(state_cards),
+        "throughput_series": _throughput_series(timestamp),
+        "heatmap": heatmap,
+        "workers": worker_rows(timestamp),
+        "activity_feed": activity,
+        "runtime_stats": asdict(metrics.runtime_stats),
+    }
 
 
 def dashboard(request: HttpRequest) -> HttpResponse:

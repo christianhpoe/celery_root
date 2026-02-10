@@ -21,6 +21,8 @@ def main() -> None:
         prometheus=False,
         prometheus_path="/metrics",
         opentelemetry=False,
+        mcp_enabled=True,
+        mcp_auth_key="some-super-secret-key",
     )
     cnc = CeleryCnC(math_app, text_app, sleep_app, config=config)
     cnc.run()

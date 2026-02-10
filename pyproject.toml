@@ -11,6 +11,7 @@ keywords = ["celery", "monitoring", "observability"]
 dependencies = [
   "celery[tblib]",
   "django",
+  "fastmcp",
   "pydantic",
   "pydantic-settings",
   "sqlalchemy",
