@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import time
+from secrets import randbelow
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import uuid4
 
@@ -95,6 +96,7 @@ def factorial(n: int) -> int:
 def fibonacci(n: int) -> int:
     """Return the nth Fibonacci number (0-indexed)."""
     a, b = 0, 1
+    time.sleep(randbelow(11) + 5)
     for _ in range(n):
         a, b = b, a + b
     return a
@@ -134,6 +136,12 @@ def greatest_common_divisor(a: int, b: int) -> int:
     while b:
         a, b = b, a % b
     return abs(a)
+
+
+@app.task(name="math.untyped_difference")
+def untyped_difference(a: Any, b: Any) -> Any:  # noqa: ANN401
+    """Subtract values without specific type hints (UI warning demo)."""
+    return a - b
 
 
 @app.task(name="math.lcm")
@@ -277,6 +285,7 @@ def group_demo(self: Task[Any, Any]) -> str:
 @app.task(bind=True, name="math.chord")
 def chord_demo(self: Task[Any, Any]) -> str:
     """Create a chord fan-out and relate it back to this root task."""
+    time.sleep(15)
     header = [fibonacci.s(n) for n in range(12, 18)]
     result = chord(header)(sum_list.s())
     root_id = _require_task_id(self.request.id, "math.chord demo")

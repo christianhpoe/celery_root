@@ -38,6 +38,8 @@
     const jsonFields = byId(form.dataset.jsonFields || "");
     const paramCard = byId(form.dataset.paramCard || "");
 
+    let untypedWarning = null;
+
     if (!taskSelect || !paramContainer || !argsInput || !kwargsInput) {
       return;
     }
@@ -51,6 +53,36 @@
       if (paramHint) {
         paramHint.textContent = text;
       }
+    }
+
+    function ensureUntypedWarning() {
+      if (untypedWarning) {
+        return untypedWarning;
+      }
+      const warning = document.createElement("p");
+      warning.className = "detail-runtime task-param-warning is-hidden";
+      warning.textContent =
+        "Untyped inputs detected. These fields will be sent as strings unless you use raw JSON.";
+      warning.setAttribute("role", "status");
+      if (paramHint && paramHint.parentNode) {
+        paramHint.insertAdjacentElement("afterend", warning);
+      } else if (paramContainer && paramContainer.parentNode) {
+        paramContainer.insertAdjacentElement("beforebegin", warning);
+      } else if (paramCard) {
+        paramCard.appendChild(warning);
+      }
+      untypedWarning = warning;
+      return warning;
+    }
+
+    function updateUntypedWarning(params) {
+      const warning = ensureUntypedWarning();
+      const hasUntyped = Array.isArray(params)
+        && params.some((param) => {
+          const annotation = String(param.annotation || "").toLowerCase();
+          return annotation === "unknown" || annotation === "any";
+        });
+      warning.classList.toggle("is-hidden", !hasUntyped);
     }
 
     function toggleMode() {
@@ -305,6 +337,7 @@
     function renderParams() {
       paramContainer.innerHTML = "";
       currentParams = [];
+      updateUntypedWarning([]);
       const selected = taskSelect.value;
       if (!selected) {
         setHint("Select a task to see its inputs.");
@@ -341,6 +374,7 @@
 
       const params = Array.isArray(schema.params) ? schema.params : [];
       currentParams = params;
+      updateUntypedWarning(params);
 
       if (params.length === 0) {
         setHint("No typed inputs were discovered for this task.");

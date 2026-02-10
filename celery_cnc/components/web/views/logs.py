@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.conf import settings
+from django.http import JsonResponse
 from django.shortcuts import render
 
 from celery_cnc.core.logging.utils import LOG_FILE_PREFIX
@@ -122,4 +123,15 @@ def logs(request: HttpRequest) -> HttpResponse:
         "content": content,
         "error": error,
     }
+    wants_json = request.GET.get("format") == "json" or "application/json" in request.headers.get("accept", "")
+    if wants_json:
+        return JsonResponse(
+            {
+                "selected_component": context["selected_component"],
+                "selected_file": context["selected_file"],
+                "lines": context["lines"],
+                "content": context["content"],
+                "error": context["error"],
+            },
+        )
     return render(request, "logs.html", context)

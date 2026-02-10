@@ -6,7 +6,7 @@ import ast
 import inspect
 import json
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 from functools import cmp_to_key
 from types import UnionType
@@ -24,8 +24,6 @@ from celery_cnc.core.engine import tasks as task_control
 from .decorators import require_post
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from celery import Celery
     from django.http import HttpRequest, HttpResponse, QueryDict
 
@@ -273,6 +271,168 @@ _KIND_LABELS: dict[inspect._ParameterKind, str] = {
     inspect.Parameter.VAR_KEYWORD: "var_keyword",
 }
 
+_STRING_SCALAR_INPUTS: dict[str, str] = {
+    "bool": "bool",
+    "int": "int",
+    "float": "float",
+    "str": "str",
+}
+_STRING_LIST_INPUTS = {
+    "collection",
+    "iterable",
+    "list",
+    "mutablesequence",
+    "sequence",
+    "set",
+    "tuple",
+    "frozenset",
+}
+_STRING_DICT_INPUTS = {
+    "dict",
+    "mapping",
+    "mutablemapping",
+}
+_SIMPLE_ANNOTATIONS: dict[object, tuple[str, str]] = {
+    bool: ("bool", "bool"),
+    int: ("int", "int"),
+    float: ("float", "float"),
+    str: ("str", "str"),
+    Any: ("any", "text"),
+}
+
+
+def _split_annotation_args(value: str) -> list[str]:
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for index, char in enumerate(value):
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth = max(depth - 1, 0)
+        elif char == "," and depth == 0:
+            part = value[start:index].strip()
+            if part:
+                parts.append(part)
+            start = index + 1
+    tail = value[start:].strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _strip_annotation_prefix(value: str) -> str:
+    normalized = value.strip()
+    for prefix in ("typing.", "collections.abc.", "collections."):
+        if normalized.startswith(prefix):
+            return normalized[len(prefix) :]
+    return normalized
+
+
+def _normalize_annotation_text(value: str) -> str:
+    normalized = _strip_annotation_prefix(value.strip())
+    if normalized.startswith("Annotated[") and normalized.endswith("]"):
+        inner = normalized[len("Annotated[") : -1]
+        parts = _split_annotation_args(inner)
+        if parts:
+            normalized = parts[0]
+    normalized = _strip_annotation_prefix(normalized.strip())
+    if normalized.startswith("Optional[") and normalized.endswith("]"):
+        normalized = normalized[len("Optional[") : -1]
+    normalized = _strip_annotation_prefix(normalized.strip())
+    if normalized.startswith("Union[") and normalized.endswith("]"):
+        inner = normalized[len("Union[") : -1]
+        parts = _split_annotation_args(inner)
+        non_none = [part for part in parts if part not in {"None", "NoneType"}]
+        if len(non_none) == 1:
+            normalized = non_none[0]
+    normalized = _strip_annotation_prefix(normalized.strip())
+    if "|" in normalized and "None" in normalized:
+        parts = [part.strip() for part in normalized.split("|")]
+        non_none = [part for part in parts if part not in {"None", "NoneType"}]
+        if len(non_none) == 1:
+            normalized = non_none[0]
+    return _strip_annotation_prefix(normalized.strip())
+
+
+def _parse_literal_options(value: str) -> list[object]:
+    inner = value[len("Literal[") : -1].strip()
+    if not inner:
+        return []
+    try:
+        parsed = ast.literal_eval(f"({inner})")
+    except (SyntaxError, ValueError):
+        return []
+    if not isinstance(parsed, tuple):
+        parsed = (parsed,)
+    options: list[object] = []
+    for item in parsed:
+        if isinstance(item, (str, int, float, bool)) or item is None:
+            options.append(item)
+        else:
+            options.append(str(item))
+    return options
+
+
+def _annotation_info_from_text(annotation: str) -> _AnnotationInfo:
+    label = _annotation_label(annotation)
+    normalized = _normalize_annotation_text(annotation)
+    base = normalized.split("[", 1)[0].strip()
+    base_lower = base.lower()
+    if base_lower in _STRING_SCALAR_INPUTS:
+        return {"label": label, "input": _STRING_SCALAR_INPUTS[base_lower], "options": []}
+    if base_lower in _STRING_LIST_INPUTS:
+        return {"label": label, "input": "json-list", "options": []}
+    if base_lower in _STRING_DICT_INPUTS:
+        return {"label": label, "input": "json-dict", "options": []}
+    if base_lower == "literal" and normalized.endswith("]"):
+        options = _parse_literal_options(normalized)
+        if options:
+            return {"label": label, "input": "select", "options": options}
+    return {"label": label, "input": "text", "options": []}
+
+
+def _literal_options_from_args(args: Sequence[object]) -> list[object]:
+    options: list[object] = []
+    for item in args:
+        if isinstance(item, (str, int, float, bool)) or item is None:
+            options.append(item)
+        else:
+            options.append(str(item))
+    return options
+
+
+def _is_sequence_type(value: object) -> bool:
+    if value in {list, tuple, set, frozenset}:
+        return True
+    if isinstance(value, type):
+        return issubclass(value, Sequence) and value is not str
+    return False
+
+
+def _is_mapping_type(value: object) -> bool:
+    if value is dict:
+        return True
+    if isinstance(value, type):
+        return issubclass(value, Mapping)
+    return False
+
+
+def _annotation_info_from_object(annotation: object) -> _AnnotationInfo:
+    if annotation in _SIMPLE_ANNOTATIONS:
+        label, input_type = _SIMPLE_ANNOTATIONS[annotation]
+        return {"label": label, "input": input_type, "options": []}
+    label = _annotation_label(annotation)
+    origin = get_origin(annotation)
+    candidate = origin if origin is not None else annotation
+    if _is_sequence_type(candidate):
+        return {"label": label, "input": "json-list", "options": []}
+    if _is_mapping_type(candidate):
+        return {"label": label, "input": "json-dict", "options": []}
+    if origin is Literal:
+        return {"label": label, "input": "select", "options": _literal_options_from_args(get_args(annotation))}
+    return {"label": label, "input": "text", "options": []}
+
 
 def _unwrap_annotated(annotation: object) -> object:
     origin = get_origin(annotation)
@@ -322,37 +482,14 @@ def _annotation_label(annotation: object) -> str:  # noqa: PLR0911
     return str(annotation)
 
 
-def _annotation_info(annotation: object) -> _AnnotationInfo:  # noqa: PLR0911
+def _annotation_info(annotation: object) -> _AnnotationInfo:
     if annotation is inspect.Signature.empty:
         return {"label": "unknown", "input": "text", "options": []}
     annotation = _unwrap_annotated(annotation)
     annotation, _optional = _strip_optional(annotation)
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-
-    if annotation is bool:
-        return {"label": "bool", "input": "bool", "options": []}
-    if annotation is int:
-        return {"label": "int", "input": "int", "options": []}
-    if annotation is float:
-        return {"label": "float", "input": "float", "options": []}
-    if annotation is str:
-        return {"label": "str", "input": "str", "options": []}
-    if annotation is Any:
-        return {"label": "any", "input": "text", "options": []}
-    if origin in (list, tuple, set):
-        return {"label": _annotation_label(annotation), "input": "json-list", "options": []}
-    if origin is dict:
-        return {"label": _annotation_label(annotation), "input": "json-dict", "options": []}
-    if origin is Literal:
-        options: list[object] = []
-        for item in args:
-            if isinstance(item, (str, int, float, bool)) or item is None:
-                options.append(item)
-            else:
-                options.append(str(item))
-        return {"label": _annotation_label(annotation), "input": "select", "options": options}
-    return {"label": _annotation_label(annotation), "input": "text", "options": []}
+    if isinstance(annotation, str):
+        return _annotation_info_from_text(annotation)
+    return _annotation_info_from_object(annotation)
 
 
 def _task_callable(task: object) -> Callable[..., object] | object:

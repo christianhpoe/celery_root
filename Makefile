@@ -19,12 +19,26 @@ export CELERY_CNC_WORKERS
 export CELERY_CNC_WEB_HOST
 export CELERY_CNC_WEB_PORT
 
-.PHONY: build build_frontend \
+.PHONY: build \
  		install \
  		lint
 
-build_frontend:
+clean:
+	rm -rf demo/data/logs
+
+FRONTEND_OUT := celery_cnc/web/static/graph/graph.js \
+	celery_cnc/web/static/graph/graph.css
+FRONTEND_SRC := $(shell find frontend/graph-ui/src -type f)
+FRONTEND_DEPS := frontend/graph-ui/package.json \
+	frontend/graph-ui/package-lock.json \
+	frontend/graph-ui/tsconfig.json \
+	frontend/graph-ui/vite.config.ts \
+	$(FRONTEND_SRC)
+
+$(FRONTEND_OUT): $(FRONTEND_DEPS)
 	npm --prefix frontend/graph-ui run build
+
+build_frontend: $(FRONTEND_OUT)
 
 build: build_frontend
 
@@ -67,6 +81,6 @@ demo_tasks:
 demo_graph_tasks:
 	uv run python demo/schedule_demo_tasks.py
 
-demo_cnc: build
+demo_cnc: clean build
 	uv run python celery_cnc/components/web/manage.py migrate
 	uv run python demo/main.py

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, cast
 
 import django
@@ -17,7 +17,7 @@ from celery_cnc.config import McpConfig, get_settings
 from .db import QueryResult, create_readonly_engine
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, MutableMapping
+    from collections.abc import MutableMapping
 
     from sqlalchemy.engine import Row
 

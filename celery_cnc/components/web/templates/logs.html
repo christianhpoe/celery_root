@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block content %}
   <header class="page-section-header">
@@ -9,7 +10,7 @@
     </div>
   </header>
 
-  <section class="detail-card">
+  <section class="detail-card" data-log-panel="true">
     <form method="get" class="filter-panel" data-auto-submit="true">
       <div>
         <label for="log-component">Component</label>
@@ -32,18 +33,19 @@
       </div>
     </form>
 
-    {% if error %}
-      <p class="detail-runtime">{{ error }}</p>
-    {% endif %}
+    <p class="detail-runtime{% if not error %} is-hidden{% endif %}" data-log-error>
+      {% if error %}{{ error }}{% endif %}
+    </p>
 
-    {% if selected_file %}
-      <p class="detail-runtime">Reading {{ selected_file }}</p>
-    {% endif %}
+    <p class="detail-runtime{% if not selected_file %} is-hidden{% endif %}" data-log-file>
+      {% if selected_file %}Reading {{ selected_file }}{% endif %}
+    </p>
 
-    {% if content %}
-      <pre class="log-output">{{ content }}</pre>
-    {% elif not error %}
-      <p class="detail-runtime">No log content available.</p>
-    {% endif %}
+    <pre class="log-output{% if not content %} is-hidden{% endif %}" data-log-output>{% if content %}{{ content }}{% endif %}</pre>
+    <p class="detail-runtime{% if content or error %} is-hidden{% endif %}" data-log-empty>No log content available.</p>
   </section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/logs.js' %}" defer></script>
 {% endblock %}

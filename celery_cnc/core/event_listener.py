@@ -177,7 +177,7 @@ class EventListener(Process):
         worker_event = WorkerEvent(
             hostname=str(hostname),
             event=event_type,
-            timestamp=_event_timestamp(event),
+            timestamp=_event_received_timestamp(event),
             info=info,
             broker_url=self.broker_url,
         )
@@ -205,8 +205,21 @@ def _event_timestamp(event: dict[str, object]) -> datetime:
     if isinstance(raw, int | float):
         return datetime.fromtimestamp(float(raw), tz=UTC)
     if isinstance(raw, datetime):
+        if raw.tzinfo is None:
+            return raw.replace(tzinfo=UTC)
         return raw
     return datetime.now(UTC)
+
+
+def _event_received_timestamp(event: dict[str, object]) -> datetime:
+    raw = event.get("local_received")
+    if isinstance(raw, int | float):
+        return datetime.fromtimestamp(float(raw), tz=UTC)
+    if isinstance(raw, datetime):
+        if raw.tzinfo is None:
+            return raw.replace(tzinfo=UTC)
+        return raw
+    return _event_timestamp(event)
 
 
 def _event_field(event: dict[str, object], *keys: str) -> object | None:

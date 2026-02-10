@@ -94,35 +94,6 @@
 
   <section class="detail-stack">
     <article class="detail-card detail-card--stacked">
-      <div class="detail-card-header">
-        <h3>Result</h3>
-        {% if task.result %}
-          <button
-            class="btn ghost btn-xs copy-btn"
-            type="button"
-            data-copy-source="task-result-raw"
-            data-copy-format="json"
-          >
-            Copy
-          </button>
-        {% endif %}
-      </div>
-      {% if task.result %}
-        <div
-          class="expandable"
-          data-expand-source="task-result-raw"
-          data-expand-format="json"
-          data-expand-title="Task output"
-        >
-          <pre class="expandable-preview">{{ task.result|truncatechars:200 }}</pre>
-          <button class="btn ghost btn-sm expandable-btn" type="button">View output</button>
-        </div>
-      {% else %}
-        <p>Pending result.</p>
-      {% endif %}
-    </article>
-
-    <article class="detail-card detail-card--stacked">
       <h3>Payload</h3>
       <div class="detail-code">
         <div class="detail-code-header">
@@ -168,6 +139,35 @@
           <button class="btn ghost btn-sm expandable-btn" type="button">View kwargs</button>
         </div>
       </div>
+    </article>
+
+    <article class="detail-card detail-card--stacked">
+      <div class="detail-card-header">
+        <h3>Result</h3>
+        {% if task.result %}
+          <button
+            class="btn ghost btn-xs copy-btn"
+            type="button"
+            data-copy-source="task-result-raw"
+            data-copy-format="json"
+          >
+            Copy
+          </button>
+        {% endif %}
+      </div>
+      {% if task.result %}
+        <div
+          class="expandable"
+          data-expand-source="task-result-raw"
+          data-expand-format="json"
+          data-expand-title="Task output"
+        >
+          <pre class="expandable-preview">{{ task.result|truncatechars:200 }}</pre>
+          <button class="btn ghost btn-sm expandable-btn" type="button">View output</button>
+        </div>
+      {% else %}
+        <p>Pending result.</p>
+      {% endif %}
     </article>
 
     <article class="detail-card detail-card--stacked">

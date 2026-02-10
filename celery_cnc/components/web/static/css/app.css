@@ -1073,6 +1073,29 @@ body {
   white-space: pre-wrap;
 }
 
+.log-output .log-line {
+  display: block;
+}
+
+.log-output .log-level-critical,
+.log-output .log-level-error {
+  color: var(--badge-danger);
+  font-weight: 600;
+}
+
+.log-output .log-level-warning {
+  color: var(--badge-warning);
+}
+
+.log-output .log-level-info {
+  color: var(--badge-info);
+}
+
+.log-output .log-level-debug,
+.log-output .log-level-trace {
+  color: var(--text-muted);
+}
+
 .detail-metrics {
   list-style: none;
   margin: 0;
@@ -1103,6 +1126,11 @@ body {
 .detail-runtime {
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+.task-param-warning {
+  margin-top: 0.35rem;
+  color: var(--badge-warning);
 }
 
 .relation-list {

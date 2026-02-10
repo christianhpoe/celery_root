@@ -5,13 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from celery_cnc import (
-    BeatConfig,
     CeleryCnC,
     CeleryCnCConfig,
     DatabaseConfigSqlite,
     LoggingConfigFile,
     McpConfig,
-    PrometheusConfig,
 )
 from demo.worker_math import app as math_app
 from demo.worker_sleep import app as sleep_app
@@ -22,12 +20,7 @@ def main() -> None:
     """Start the CnC supervisor and dev web server."""
     config = CeleryCnCConfig(
         logging=LoggingConfigFile(log_dir=Path("./demo/data/logs")),
-        database=DatabaseConfigSqlite(db_path=Path("./demo/data/sqlite3.db"), purge_db=True),
-        beat=BeatConfig(
-            schedule_path=Path("./demo/data/schedule.beat"),
-            delete_schedules_on_boot=True,
-        ),
-        prometheus=PrometheusConfig(port=8001, prometheus_path="/metrics"),
+        database=DatabaseConfigSqlite(db_path=Path("./demo/data/sqlite3.db"), purge_db=False),
         mcp=McpConfig(auth_key="some-super-secret-key"),
     )
     cnc = CeleryCnC(math_app, text_app, sleep_app, config=config)

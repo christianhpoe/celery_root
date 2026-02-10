@@ -146,6 +146,7 @@ class _McpServerProcess(Process):
             port=self._port,
             log_level=self._config.logging.log_level.lower(),
             access_log=False,
+            ws="websockets-sansio",
         )
         server = UvicornServer(config=server_config)
 
