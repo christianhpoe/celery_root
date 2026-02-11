@@ -31,6 +31,18 @@ Seed demo tasks only (no CNC startup):
 make demo_graph_tasks
 ```
 
+## OpenTelemetry quick check
+If you want to validate OTLP metrics locally, run the collector helper:
+
+```bash
+cd demo
+docker compose -f otel.docker-compose.yml up
+```
+
+Then start Celery CnC with `OpenTelemetryConfig(endpoint="http://localhost:4317")`.
+The collector exposes a Prometheus scrape endpoint at `http://localhost:9464/metrics`
+so you can view the OTLP-exported metrics in a browser.
+
 ## Local graph preview (non-Docker)
 If you want to run the CnC web UI + seed demo tasks locally (so you can inspect graphs),
 use the helper script from the repo root:

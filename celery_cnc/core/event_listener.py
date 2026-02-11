@@ -7,6 +7,7 @@ import logging
 import time
 from datetime import UTC, datetime
 from multiprocessing import Event, Process, Queue
+from queue import Full
 from typing import TYPE_CHECKING
 
 from celery import Celery
@@ -19,6 +20,8 @@ from celery_cnc.core.logging.setup import configure_process_logging
 from celery_cnc.core.logging.utils import sanitize_component
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from celery_cnc.config import CeleryCnCConfig
 
 _TASK_STATE_MAP = {
@@ -39,11 +42,18 @@ _HEARTBEAT_INTERVAL = 60.0
 class EventListener(Process):
     """Listen to Celery events for a single broker."""
 
-    def __init__(self, broker_url: str, queue: Queue[object], config: CeleryCnCConfig | None = None) -> None:
+    def __init__(
+        self,
+        broker_url: str,
+        queue: Queue[object],
+        config: CeleryCnCConfig | None = None,
+        extra_queues: Sequence[Queue[object]] | None = None,
+    ) -> None:
         """Create an event listener for a broker URL."""
         super().__init__(daemon=True)
         self.broker_url = broker_url
-        self.queue = queue
+        self._queue = queue
+        self._extra_queues = list(extra_queues or [])
         self._config = config
         self._stop_event = Event()
         self._logger = logging.getLogger(__name__)
@@ -165,7 +175,7 @@ class EventListener(Process):
             group_id=_stringify(_event_id(event, "group_id", "group")),
             chord_id=_stringify(_event_id(event, "chord_id", "chord")),
         )
-        self.queue.put(task_event)
+        self._emit(task_event)
 
     def _handle_worker_event(self, event_type: str, event: dict[str, object]) -> None:
         hostname = event.get("hostname")
@@ -181,7 +191,7 @@ class EventListener(Process):
             info=info,
             broker_url=self.broker_url,
         )
-        self.queue.put(worker_event)
+        self._emit(worker_event)
 
     def _handle_task_relation(self, event: dict[str, object]) -> None:
         root_id = _stringify(event.get("root_id"))
@@ -190,14 +200,25 @@ class EventListener(Process):
         if not root_id or not child_id or not relation:
             return
         parent_id = _stringify(event.get("parent_id"))
-        self.queue.put(
+        self._emit(
             TaskRelation(
                 root_id=root_id,
                 parent_id=parent_id,
                 child_id=child_id,
                 relation=relation,
             ),
+            fanout=False,
         )
+
+    def _emit(self, item: object, *, fanout: bool = True) -> None:
+        self._queue.put(item)
+        if not fanout or not self._extra_queues:
+            return
+        for queue in self._extra_queues:
+            try:
+                queue.put_nowait(item)
+            except Full:
+                self._logger.debug("Dropping event for full metrics queue: %s", type(item).__name__)
 
 
 def _event_timestamp(event: dict[str, object]) -> datetime:

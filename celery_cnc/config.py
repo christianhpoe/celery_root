@@ -172,7 +172,8 @@ class CeleryCnCConfig(BaseModel):
     frontend: FrontendConfig | None = Field(default_factory=FrontendConfig)
     mcp: McpConfig | None = None
 
-    event_queue_maxsize: int = Field(default=100_000, gt=0)
+    worker_import_paths: list[str] = Field(default_factory=list)
+    event_queue_maxsize: int = Field(default=32_767, gt=0, le=32_767)
     integration: bool = False
 
 

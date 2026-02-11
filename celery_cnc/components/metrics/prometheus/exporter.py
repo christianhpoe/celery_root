@@ -155,6 +155,12 @@ class PrometheusExporter(BaseMonitoringExporter):
             ("worker", "broker", "backend"),
             registry=self.registry,
         )
+        self._worker_pool_size = Gauge(
+            f"{self._metric_prefix}_worker_pool_size",
+            "Worker pool size",
+            ("worker", "broker", "backend"),
+            registry=self.registry,
+        )
 
         self._started_server = False
         if port is not None:
@@ -185,6 +191,13 @@ class PrometheusExporter(BaseMonitoringExporter):
             self._worker_brokers[event.hostname] = event.broker_url
         labels = self._worker_labels(event.hostname)
         normalized = event.event.lower()
+        if isinstance(event.info, dict):
+            active = _parse_active_tasks(event.info.get("active"))
+            if active is not None:
+                self._set_active_count(event.hostname, active)
+            pool_size = _parse_pool_size(event.info.get("pool"))
+            if pool_size is not None:
+                self._worker_pool_size.labels(**labels).set(pool_size)
         if normalized in {"worker-online", "online", "worker-heartbeat", "heartbeat"}:
             self._worker_online.labels(**labels).set(1)
             self._worker_last_heartbeat.labels(**labels).set(event.timestamp.timestamp())
@@ -267,6 +280,15 @@ class PrometheusExporter(BaseMonitoringExporter):
             self._active_counts[worker] = current
         self._worker_current.labels(**self._worker_labels(worker)).set(current)
 
+    def _set_active_count(self, worker: str, count: int) -> None:
+        current = max(count, 0)
+        if current <= 0:
+            self._active_counts.pop(worker, None)
+            current = 0
+        else:
+            self._active_counts[worker] = current
+        self._worker_current.labels(**self._worker_labels(worker)).set(current)
+
     def _task_labels(self, task: str, worker: str, event_type: str | None = None) -> dict[str, str]:
         labels = {
             "task": task,
@@ -321,3 +343,18 @@ def _strip_credentials(value: str) -> str:
     if parts.port is not None:
         host = f"{host}:{parts.port}"
     return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
+def _parse_pool_size(value: object) -> int | None:
+    if not isinstance(value, dict):
+        return None
+    pool_size = value.get("max-concurrency") or value.get("max_concurrency")
+    if isinstance(pool_size, int):
+        return pool_size
+    return None
+
+
+def _parse_active_tasks(value: object) -> int | None:
+    if isinstance(value, list):
+        return len(value)
+    return None

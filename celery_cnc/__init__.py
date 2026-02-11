@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import functools
+import importlib
+import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,6 +29,7 @@ from .core.registry import WorkerRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from types import ModuleType
 
     from celery import Celery
 
@@ -66,6 +70,7 @@ class CeleryCnC:
                 },
             )
 
+        config = self._ensure_worker_import_paths(config, workers)
         set_settings(config)
         self.config = config
         self.registry = WorkerRegistry(workers)
@@ -156,6 +161,20 @@ class CeleryCnC:
             msg = f"Failed to purge beat schedule file at {resolved}: {exc}"
             raise RuntimeError(msg) from exc
 
+    @staticmethod
+    def _ensure_worker_import_paths(
+        config: CeleryCnCConfig,
+        workers: tuple[Celery | str, ...],
+    ) -> CeleryCnCConfig:
+        if config.worker_import_paths:
+            return config
+        paths = _parse_worker_paths(os.getenv("CELERY_CNC_WORKERS"))
+        if not paths:
+            paths = _derive_worker_import_paths(workers)
+        if not paths:
+            return config
+        return config.model_copy(update={"worker_import_paths": paths})
+
 
 def _make_sqlite_controller(path: Path) -> BaseDBController:
     """Create a SQLite controller; multiprocessing-safe factory."""
@@ -165,6 +184,70 @@ def _make_sqlite_controller(path: Path) -> BaseDBController:
 def _return_controller(controller: BaseDBController) -> BaseDBController:
     """Return the provided controller instance."""
     return controller
+
+
+def _parse_worker_paths(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _derive_worker_import_paths(workers: tuple[Celery | str, ...]) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for worker in workers:
+        if isinstance(worker, str):
+            if worker and worker not in seen:
+                seen.add(worker)
+                paths.append(worker)
+            continue
+        path = _resolve_app_import_path(worker)
+        if path and path not in seen:
+            seen.add(path)
+            paths.append(path)
+    return paths
+
+
+def _resolve_app_import_path(app: Celery) -> str | None:
+    candidates: list[str] = []
+    raw_main = getattr(app, "main", None)
+    if raw_main:
+        candidates.append(str(raw_main))
+    conf_main = app.conf.get("main") if getattr(app, "conf", None) else None
+    if conf_main and str(conf_main) not in candidates:
+        candidates.append(str(conf_main))
+    for module_name in candidates:
+        module = _load_module(module_name)
+        if module is None:
+            continue
+        attr = _find_app_attr(module, app)
+        if attr:
+            return f"{module.__name__}:{attr}"
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        attr = _find_app_attr(module, app)
+        if attr:
+            return f"{module.__name__}:{attr}"
+    return None
+
+
+def _load_module(name: str) -> ModuleType | None:
+    try:
+        return importlib.import_module(name)
+    except (ImportError, AttributeError, ModuleNotFoundError, TypeError, ValueError):  # pragma: no cover - best effort
+        return None
+
+
+def _find_app_attr(module: ModuleType, app: Celery) -> str | None:
+    try:
+        items = vars(module).items()
+    except (AttributeError, TypeError):  # pragma: no cover - best effort
+        return None
+    for attr, value in items:
+        if value is app:
+            return str(attr)
+    return None
 
 
 __all__ = [

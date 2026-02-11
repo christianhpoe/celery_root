@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 from django.conf import settings
 from django.shortcuts import render
 
+from celery_cnc.components.web.components import component_snapshot
+
 if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
@@ -23,6 +25,10 @@ _THEMES: tuple[tuple[str, str], ...] = (
 
 def settings_page(request: HttpRequest) -> HttpResponse:
     """Render the settings page."""
+    snapshot = component_snapshot()
+    prometheus_component = snapshot["prometheus"]
+    otel_component = snapshot["open_telemetry"]
+    mcp_component = snapshot["mcp"]
     host = getattr(settings, "CELERY_CNC_MCP_HOST", "127.0.0.1")
     port = getattr(settings, "CELERY_CNC_MCP_PORT", 9100)
     path = getattr(settings, "CELERY_CNC_MCP_PATH", "/mcp/")
@@ -57,7 +63,9 @@ def settings_page(request: HttpRequest) -> HttpResponse:
         {
             "title": "Settings",
             "themes": _THEMES,
-            "mcp_enabled": getattr(settings, "CELERY_CNC_MCP_ENABLED", False),
+            "prometheus_component": prometheus_component,
+            "otel_component": otel_component,
+            "mcp_enabled": mcp_component.enabled,
             "mcp_auth_configured": getattr(settings, "CELERY_CNC_MCP_AUTH_KEY_SET", False),
             "mcp_url": mcp_url,
             "mcp_config_snippet": json.dumps(mcp_config, indent=2),

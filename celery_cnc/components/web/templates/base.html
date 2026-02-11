@@ -48,22 +48,6 @@
                 Beat
               </a>
             {% endif %}
-            {% if component_nav.prometheus %}
-              <a
-                href="{% url 'prometheus' %}"
-                class="nav-link nav-link--prometheus {% if current_url == 'prometheus' %}is-active{% endif %}"
-              >
-                Prometheus
-              </a>
-            {% endif %}
-            {% if component_nav.open_telemetry %}
-              <a
-                href="{% url 'opentelemetry' %}"
-                class="nav-link nav-link--opentelemetry {% if current_url == 'opentelemetry' %}is-active{% endif %}"
-              >
-                OpenTelemetry
-              </a>
-            {% endif %}
             <a
               href="{% url 'settings' %}"
               class="nav-link nav-link--settings {% if current_url == 'settings' %}is-active{% endif %}"

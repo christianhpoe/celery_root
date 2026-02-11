@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from celery_cnc.config import FrontendConfig, McpConfig, get_settings
@@ -72,13 +71,7 @@ CELERY_CNC_LOG_DIR = Path(CONFIG.logging.log_dir)
 CELERY_CNC_RETENTION_DAYS = int(CONFIG.database.retention_days)
 
 
-def _parse_worker_paths(raw: str | None) -> list[str]:
-    if not raw:
-        return []
-    return [item.strip() for item in raw.split(",") if item.strip()]
-
-
-CELERY_CNC_WORKERS = _parse_worker_paths(os.getenv("CELERY_CNC_WORKERS"))
+CELERY_CNC_WORKERS = list(CONFIG.worker_import_paths)
 
 CELERY_CNC_BASIC_AUTH = FRONTEND.basic_auth
 CELERY_CNC_AUTH_PROVIDER = FRONTEND.auth_provider

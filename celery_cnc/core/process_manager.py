@@ -8,6 +8,7 @@ import threading
 import time
 from contextlib import suppress
 from multiprocessing import Event, Process, Queue
+from queue import Empty
 from typing import TYPE_CHECKING
 
 from uvicorn import Config as UvicornConfig
@@ -86,6 +87,7 @@ class _ExporterProcess(Process):
         config: CeleryCnCConfig,
         component: str,
         metrics_url: str | None = None,
+        event_queue: Queue[object] | None = None,
     ) -> None:
         """Create a process to host a monitoring exporter."""
         super().__init__(daemon=True)
@@ -93,6 +95,7 @@ class _ExporterProcess(Process):
         self._cnc_config = config
         self._component = component
         self._metrics_url = metrics_url
+        self._event_queue = event_queue
         self._stop_event = Event()
 
     def stop(self) -> None:
@@ -111,13 +114,43 @@ class _ExporterProcess(Process):
             print(f"Prometheus metrics available at {self._metrics_url}")  # noqa: T201
         last_heartbeat = time.monotonic()
         while not self._stop_event.is_set():
-            time.sleep(1.0)
+            self._drain_events(exporter, logger)
             now = time.monotonic()
             if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
                 logger.info("Exporter heartbeat.")
                 last_heartbeat = now
         logger.info("Exporter process stopping (%s).", self._component)
         exporter.shutdown()
+
+    def _drain_events(self, exporter: BaseMonitoringExporter, logger: logging.Logger) -> None:
+        if self._event_queue is None:
+            time.sleep(1.0)
+            return
+        try:
+            item = self._event_queue.get(timeout=1.0)
+        except Empty:
+            return
+        self._handle_event(exporter, logger, item)
+        while True:
+            try:
+                item = self._event_queue.get_nowait()
+            except Empty:
+                return
+            self._handle_event(exporter, logger, item)
+
+    @staticmethod
+    def _handle_event(exporter: BaseMonitoringExporter, logger: logging.Logger, item: object) -> None:
+        from celery_cnc.core.db.models import TaskEvent, TaskStats, WorkerEvent  # noqa: PLC0415
+
+        try:
+            if isinstance(item, TaskEvent):
+                exporter.on_task_event(item)
+            elif isinstance(item, WorkerEvent):
+                exporter.on_worker_event(item)
+            elif isinstance(item, TaskStats):
+                exporter.update_stats(item)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Exporter failed to process event %r", item)
 
 
 class _McpServerProcess(Process):
@@ -172,9 +205,9 @@ class ProcessManager:
         self._registry = registry
         self._config = config
         self._controller_factory = controller_factory
+        self._logger = logging.getLogger(__name__)
         self._queue: Queue[object] = Queue(maxsize=config.event_queue_maxsize)
         self._stop_event = Event()
-        self._logger = logging.getLogger(__name__)
         self._process_factories: dict[str, Callable[[], Process]] = {}
         self._processes: dict[str, Process] = {}
         self._status_store = ComponentStatusStore.from_config(config)
@@ -234,18 +267,18 @@ class ProcessManager:
             self._controller_factory,
             self._config,
         )
+        metrics_queues: list[Queue[object]] = []
         backend_map: dict[str, str] = {}
         broker_groups = self._registry.get_brokers()
         for broker_url, group in broker_groups.items():
             backends = {str(app.conf.result_backend) if app.conf.result_backend else "" for app in group.apps}
             backend_map[broker_url] = next(iter(backends)) if len(backends) == 1 else "multiple"
-        for broker_url in broker_groups:
-            name = f"event_listener:{broker_url}"
-            self._process_factories[name] = functools.partial(EventListener, broker_url, self._queue, self._config)
         if self._config.prometheus is not None:
             from celery_cnc.components.metrics.prometheus import PrometheusExporter  # noqa: PLC0415
 
             metrics_url = _metrics_url(self._config)
+            prometheus_queue: Queue[object] = Queue(self._config.event_queue_maxsize)
+            metrics_queues.append(prometheus_queue)
             self._process_factories["prometheus"] = functools.partial(
                 _ExporterProcess,
                 functools.partial(
@@ -257,19 +290,34 @@ class ProcessManager:
                 self._config,
                 "prometheus",
                 metrics_url,
+                prometheus_queue,
             )
         if self._config.open_telemetry is not None:
             from celery_cnc.components.metrics.opentelemetry import OTelExporter  # noqa: PLC0415
 
+            otel_queue: Queue[object] = Queue(self._config.event_queue_maxsize)
+            metrics_queues.append(otel_queue)
             self._process_factories["otel"] = functools.partial(
                 _ExporterProcess,
                 functools.partial(
                     OTelExporter,
                     service_name=self._config.open_telemetry.service_name,
                     endpoint=self._config.open_telemetry.endpoint,
+                    broker_backend_map=backend_map,
                 ),
                 self._config,
                 "otel",
+                None,
+                otel_queue,
+            )
+        for broker_url in broker_groups:
+            name = f"event_listener:{broker_url}"
+            self._process_factories[name] = functools.partial(
+                EventListener,
+                broker_url,
+                self._queue,
+                self._config,
+                extra_queues=tuple(metrics_queues),
             )
         if self._config.frontend is not None:
             self._process_factories["web"] = functools.partial(

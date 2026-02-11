@@ -10,47 +10,180 @@
     </div>
   </header>
 
-  <section class="detail-card">
-    <h3>Theme</h3>
-    <p class="detail-runtime">Theme preference is saved locally in your browser.</p>
-    <form class="theme-picker" data-theme-form>
-      <div class="theme-grid" role="radiogroup" aria-label="Theme selection">
-        {% for value,label in themes %}
-          <label class="theme-option">
-            <input type="radio" name="theme" value="{{ value }}" />
-            <span class="theme-label">{{ label }}</span>
-            <span class="theme-swatch" data-theme-swatch="{{ value }}"></span>
-          </label>
-        {% endfor %}
-      </div>
-    </form>
-  </section>
-
-  <section class="detail-card">
-    <h3>MCP Server</h3>
-    {% if mcp_enabled %}
-      <p class="detail-runtime">MCP is enabled at <strong>{{ mcp_url }}</strong>.</p>
-    {% else %}
-      <p class="detail-runtime">MCP is disabled. Set <code>CELERY_CNC_MCP_ENABLED=1</code> to enable it.</p>
-    {% endif %}
-    <p class="detail-runtime">
-      {% if mcp_auth_configured %}
-        Authentication key is configured. Use your MCP auth key below.
-      {% else %}
-        Configure <code>CELERY_CNC_MCP_AUTH_KEY</code> to protect the MCP server.
+  <section class="tabs" data-tabs data-default-tab="settings-web">
+    <div class="tabs-list" role="tablist" aria-label="Settings sections">
+      <button
+        class="tabs-tab is-active"
+        type="button"
+        role="tab"
+        aria-selected="true"
+        aria-controls="settings-web"
+        id="settings-web-tab"
+        data-tab-target="settings-web"
+      >
+        Web
+      </button>
+      {% if otel_component.enabled %}
+        <button
+          class="tabs-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="settings-otel"
+          id="settings-otel-tab"
+          data-tab-target="settings-otel"
+        >
+          OpenTelemetry
+        </button>
       {% endif %}
-    </p>
-    <p class="detail-runtime">Copy/paste this config into your MCP client:</p>
-    <pre class="detail-runtime"><code>{{ mcp_config_snippet }}</code></pre>
-    <p class="detail-runtime">Codex CLI (HTTP MCP) example:</p>
-    <pre class="detail-runtime"><code>{{ mcp_codex_command }}</code></pre>
-    <p class="detail-runtime">Claude Code (.mcp.json) example:</p>
-    <pre class="detail-runtime"><code>{{ mcp_claude_config_snippet }}</code></pre>
-    <p class="detail-runtime">Claude Code (HTTP MCP) example:</p>
-    <pre class="detail-runtime"><code>{{ mcp_claude_command }}</code></pre>
+      {% if prometheus_component.enabled %}
+        <button
+          class="tabs-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="settings-prometheus"
+          id="settings-prometheus-tab"
+          data-tab-target="settings-prometheus"
+        >
+          Prometheus
+        </button>
+      {% endif %}
+      {% if mcp_enabled %}
+        <button
+          class="tabs-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="settings-mcp"
+          id="settings-mcp-tab"
+          data-tab-target="settings-mcp"
+        >
+          MCP
+        </button>
+      {% endif %}
+    </div>
+
+    <div
+      class="tabs-panel is-active"
+      role="tabpanel"
+      aria-labelledby="settings-web-tab"
+      id="settings-web"
+    >
+      <section class="detail-card">
+        <h3>Theme</h3>
+        <p class="detail-runtime">Theme preference is saved locally in your browser.</p>
+        <form class="theme-picker" data-theme-form>
+          <div class="theme-grid" role="radiogroup" aria-label="Theme selection">
+            {% for value,label in themes %}
+              <label class="theme-option">
+                <input type="radio" name="theme" value="{{ value }}" />
+                <span class="theme-label">{{ label }}</span>
+                <span class="theme-swatch" data-theme-swatch="{{ value }}"></span>
+              </label>
+            {% endfor %}
+          </div>
+        </form>
+      </section>
+    </div>
+
+    {% if otel_component.enabled %}
+      <div
+        class="tabs-panel"
+        role="tabpanel"
+        aria-labelledby="settings-otel-tab"
+        id="settings-otel"
+      >
+        <section class="detail-card">
+          <h3>Exporter Status</h3>
+          <p class="detail-runtime">
+            Status:
+            <span
+              class="badge {% if otel_component.status == 'up' %}badge-success{% elif otel_component.status == 'down' %}badge-danger{% elif otel_component.status == 'configured' %}badge-info{% else %}badge-muted{% endif %}"
+            >
+              {{ otel_component.status }}
+            </span>
+          </p>
+          {% if otel_component.pid %}
+            <p class="detail-runtime">Process PID: {{ otel_component.pid }}</p>
+          {% endif %}
+        </section>
+
+        <section class="detail-card">
+          <h3>Configuration</h3>
+          <p class="detail-runtime">Service name: {{ otel_component.config.service_name }}</p>
+          <p class="detail-runtime">Endpoint: {{ otel_component.config.endpoint }}</p>
+        </section>
+      </div>
+    {% endif %}
+
+    {% if prometheus_component.enabled %}
+      <div
+        class="tabs-panel"
+        role="tabpanel"
+        aria-labelledby="settings-prometheus-tab"
+        id="settings-prometheus"
+      >
+        <section class="detail-card">
+          <h3>Exporter Status</h3>
+          <p class="detail-runtime">
+            Status:
+            <span
+              class="badge {% if prometheus_component.status == 'up' %}badge-success{% elif prometheus_component.status == 'down' %}badge-danger{% elif prometheus_component.status == 'configured' %}badge-info{% else %}badge-muted{% endif %}"
+            >
+              {{ prometheus_component.status }}
+            </span>
+          </p>
+          {% if prometheus_component.pid %}
+            <p class="detail-runtime">Process PID: {{ prometheus_component.pid }}</p>
+          {% endif %}
+        </section>
+
+        <section class="detail-card">
+          <h3>Scrape Endpoint</h3>
+          <p class="detail-runtime">Path: {{ prometheus_component.config.path }}</p>
+          <p class="detail-runtime">Port: {{ prometheus_component.config.port }}</p>
+          {% if prometheus_component.url %}
+            <p>
+              <a class="btn" href="{{ prometheus_component.url }}" target="_blank" rel="noreferrer noopener">Open /metrics</a>
+            </p>
+          {% endif %}
+        </section>
+      </div>
+    {% endif %}
+
+    {% if mcp_enabled %}
+      <div
+        class="tabs-panel"
+        role="tabpanel"
+        aria-labelledby="settings-mcp-tab"
+        id="settings-mcp"
+      >
+        <section class="detail-card">
+          <h3>MCP Server</h3>
+          <p class="detail-runtime">MCP is enabled at <strong>{{ mcp_url }}</strong>.</p>
+          <p class="detail-runtime">
+            {% if mcp_auth_configured %}
+              Authentication key is configured. Use your MCP auth key below.
+            {% else %}
+              Configure <code>CELERY_CNC_MCP_AUTH_KEY</code> to protect the MCP server.
+            {% endif %}
+          </p>
+          <p class="detail-runtime">Copy/paste this config into your MCP client:</p>
+          <pre class="detail-runtime"><code>{{ mcp_config_snippet }}</code></pre>
+          <p class="detail-runtime">Codex CLI (HTTP MCP) example:</p>
+          <pre class="detail-runtime"><code>{{ mcp_codex_command }}</code></pre>
+          <p class="detail-runtime">Claude Code (.mcp.json) example:</p>
+          <pre class="detail-runtime"><code>{{ mcp_claude_config_snippet }}</code></pre>
+          <p class="detail-runtime">Claude Code (HTTP MCP) example:</p>
+          <pre class="detail-runtime"><code>{{ mcp_claude_command }}</code></pre>
+        </section>
+      </div>
+    {% endif %}
   </section>
 {% endblock %}
 
 {% block scripts %}
+  <script src="{% static 'js/tabs.js' %}" defer></script>
   <script src="{% static 'js/settings.js' %}" defer></script>
 {% endblock %}

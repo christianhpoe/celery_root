@@ -32,7 +32,7 @@ dist_clean:
 	rm -rf dist
 
 lint:
-	CELERY_CNC_WORKERS= uv run pre-commit run --all-files
+	uv run pre-commit run --all-files
 
 docker_network:
 	docker network create celery_cnc_demo || true

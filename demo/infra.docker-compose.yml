@@ -1,4 +1,13 @@
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    command: [ "--config=/etc/otel-collector-config.yaml" ]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "9464:9464"
+
   broker1_rabbitmq:
     image: rabbitmq:4-management
     ports:
