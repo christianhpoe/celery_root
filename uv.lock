@@ -241,7 +241,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "reuse", specifier = ">=6.2.0" },
+    { name = "reuse" },
     { name = "sqlalchemy" },
 ]
 

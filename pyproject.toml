@@ -82,7 +82,7 @@ dev = [
   "pre-commit",
   "celery-types",
   "django-stubs",
-  "reuse>=6.2.0",
+  "reuse",
 ]
 
 [tool.hatch.build.targets.wheel]
