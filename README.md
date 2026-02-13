@@ -58,6 +58,22 @@ uv run python -m celery_cnc.components.web.devserver --host 127.0.0.1 --port 800
 
 The UI reads task/worker data from the CnC SQLite store (see configuration below).
 
+## CLI usage
+
+You can run the supervisor via the CLI, either standalone or as a Celery subcommand.
+
+Standalone:
+
+```bash
+celery-cnc -A demo.worker_math:app
+```
+
+Via Celery:
+
+```bash
+celery -A demo.worker_math:app cnc
+```
+
 ## Configuration
 
 Configuration is explicit via Pydantic models:
