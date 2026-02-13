@@ -26,7 +26,7 @@ Re-seed manually anytime:
 docker compose run --rm seeder
 ```
 
-Seed demo tasks only (no CNC startup):
+Seed demo tasks only (no server startup):
 ```bash
 make demo_graph_tasks
 ```

@@ -14,11 +14,11 @@ def test_file_log_controller_writes_rotating_file(tmp_path: Path) -> None:
     controller = FileLogController()
 
     controller.configure(config)
-    logger = controller.get_logger("cnc-test")
+    logger = controller.get_logger("root-test")
     logger.info("hello log")
     controller.shutdown()
 
-    log_files = list(tmp_path.glob("celery_root-cnc-test.log*"))
+    log_files = list(tmp_path.glob("celery_root-root-test.log*"))
     assert log_files, "log file should be created"
     content = log_files[0].read_text(encoding="utf-8")
     assert "hello log" in content

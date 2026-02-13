@@ -2,7 +2,7 @@
 
 Docs: https://docs.celeryroot.eu
 
-Celery Root is a command & control plane for Celery (formerly Celery CnC).
+Celery Root is a command & control plane for Celery
 It ships with a Django-based UI, a lightweight event listener/collector, and helper utilities for inspecting
 queues, tasks, workers, and beat schedules. The distribution and Python package names are still
 `celery_root` for compatibility; only the product name and visuals have changed.

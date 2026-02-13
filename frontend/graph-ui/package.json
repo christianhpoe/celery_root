@@ -1,5 +1,5 @@
 {
-  "name": "celery-cnc-graph-ui",
+  "name": "celery-root-graph-ui",
   "private": true,
   "version": "0.0.0",
   "type": "module",

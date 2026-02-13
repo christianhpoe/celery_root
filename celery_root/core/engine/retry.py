@@ -6,7 +6,7 @@ import json
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING, Protocol
 
-from . import tasks as cnc_tasks
+from . import tasks as root_tasks
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -139,7 +139,7 @@ def _send_via_celery(  # noqa: PLR0913
     countdown: float | None,
     eta: datetime | None,
 ) -> object:
-    return cnc_tasks.send_task(
+    return root_tasks.send_task(
         registry,
         worker,
         name,
