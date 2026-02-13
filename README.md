@@ -26,7 +26,7 @@ queues, tasks, workers, and beat schedules. The distribution and Python package 
 
 ## Quickstart (demo)
 
-Requirements: Python >= 3.13, `uv`, and Docker (for the demo broker/redis).
+Requirements: Python >= 3.10, `uv`, and Docker (for the demo broker/redis).
 
 ```bash
 make demo-infra
@@ -48,7 +48,7 @@ Launch the Celery Root supervisor + web UI:
 make demo-root
 ```
 
-Then open `http://127.0.0.1:8000`.
+Then open `http://127.0.0.1:5555`.
 
 To enqueue demo tasks:
 
@@ -76,7 +76,7 @@ You can run the supervisor via the CLI, either standalone or as a Celery subcomm
 Standalone:
 
 ```bash
-celery_root -A demo.worker_math:app
+celery-root -A demo.worker_math:app
 ```
 
 Via Celery:

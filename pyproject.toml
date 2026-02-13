@@ -7,10 +7,10 @@
 [project]
 name = "celery_root"
 version = "0.1.0"
-description = "Celery Command & Control"
-url = "https://docs.celeryroot.eu/"
+description = "Command & Control for Celery Workers"
 readme = "README.md"
-license = { file = "LICENSES/BSD-3-Clause.txt" }
+license = "BSD-3-Clause"
+license-files = ["LICENSES/BSD-3-Clause.txt"]
 authors = [{ name = "Christian-Hauke Poensgen" },{ name = "Maximilian Dolling" }]
 keywords = [
   "celery",
@@ -19,6 +19,28 @@ keywords = [
   "mcp",
   "prometheus",
   "otel"
+]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Developers",
+    "Framework :: Celery",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development",
+    "Topic :: System :: Distributed Computing",
+    "Framework :: Celery",
+    "Typing :: Typed",
 ]
 
 requires-python = ">=3.10"
@@ -36,6 +58,11 @@ dependencies = [
   "pydantic-extra-types",
   "click",
 ]
+
+[project.urls]
+Documentation = "https://docs.celeryroot.eu/"
+Repository = "https://github.com/christianhpoe/celery_root"
+Issues = "https://github.com/christianhpoe/celery_root/issues"
 
 [project.scripts]
 celery-root = "celery_root.cli:main"
@@ -96,7 +123,7 @@ warn_unused_ignores = true
 disallow_any_generics = true
 no_implicit_reexport = true
 disallow_untyped_defs = true
-ignore_missing_imports = true
+ignore_missing_imports = false
 
 [[tool.mypy.overrides]]
 module = [

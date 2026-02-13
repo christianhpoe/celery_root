@@ -29,17 +29,14 @@ Instructions for AI agents (and humans) working in this repo.
 Run type checking:
 
 ```bash
-uv run mypy
+make lint
 ```
-
-(or `mypy src/` / whatever is configured in `pyproject.toml`).
 
 ### Rough checks (pre-commit)
 
 We use **pre-commit** to run a consistent set of checks before each commit. Install and run:
 
 ```bash
-uv add --dev pre-commit
 uv run pre-commit install
 ```
 
