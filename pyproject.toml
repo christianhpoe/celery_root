@@ -1,13 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+# SPDX-FileCopyrightText: 2026 Maximilian Dolling
+# SPDX-FileContributor: AUTHORS.md
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
 [project]
 name = "celery_root"
 version = "0.1.0"
 description = "Celery Command & Control"
+url = "https://docs.celeryroot.eu/"
 readme = "README.md"
-requires-python = ">=3.13"
-license = { file = "LICENSE" }
+license = { file = "LICENSES/BSD-3-Clause.txt" }
 authors = [{ name = "Christian-Hauke Poensgen" },{ name = "Maximilian Dolling" }]
-keywords = ["celery", "monitoring", "observability"]
+keywords = [
+  "celery",
+  "monitoring",
+  "observability",
+  "mcp",
+  "prometheus",
+  "otel"
+]
+
+requires-python = ">=3.10"
 dependencies = [
   "celery[tblib]",
   "django",
@@ -19,16 +33,15 @@ dependencies = [
   "prometheus-client",
   "opentelemetry-sdk",
   "opentelemetry-exporter-otlp",
-  "pydantic-settings>=2.12.0",
-  "pydantic-extra-types>=2.11.0",
-  "click>=8.3.1",
+  "pydantic-extra-types",
+  "click",
 ]
 
 [project.scripts]
-celery_root = "celery_root.cli:main"
+celery-root = "celery_root.cli:main"
 
 [project.entry-points."celery.commands"]
-celery_root = "celery_root.cli:celery_root"
+celery-root = "celery_root.cli:celery_root"
 
 [dependency-groups]
 dev = [
@@ -42,6 +55,7 @@ dev = [
   "pre-commit",
   "celery-types",
   "django-stubs",
+  "reuse>=6.2.0",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+// SPDX-FileCopyrightText: 2026 Maximilian Dolling
+// SPDX-FileContributor: AUTHORS.md
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Builds typed task forms from Celery task signatures.
 (function () {
   const JSON_INDENT = 2;

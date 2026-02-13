@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+// SPDX-FileCopyrightText: 2026 Maximilian Dolling
+// SPDX-FileContributor: AUTHORS.md
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import clsx from "clsx";

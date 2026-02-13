@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+// SPDX-FileCopyrightText: 2026 Maximilian Dolling
+// SPDX-FileContributor: AUTHORS.md
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Chart rendering helpers.
 (function () {
   const palette = ["#4C6FFF", "#4CC9F0", "#F7C59F", "#F28482", "#84A59D", "#F6BD60"];

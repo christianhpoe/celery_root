@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+# SPDX-FileCopyrightText: 2026 Maximilian Dolling
+# SPDX-FileContributor: AUTHORS.md
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Development web server for the Celery Root UI."""
 
 from __future__ import annotations
@@ -84,7 +90,7 @@ def main() -> None:
     frontend = config.frontend
     parser = argparse.ArgumentParser(description="Run the Celery Root dev web server.")
     parser.add_argument("--host", default=(frontend.host if frontend else "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=(frontend.port if frontend else 8000))
+    parser.add_argument("--port", type=int, default=(frontend.port if frontend else 5555))
     args = parser.parse_args()
 
     logger = logging.getLogger(__name__)

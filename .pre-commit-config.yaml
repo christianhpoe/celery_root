@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+# SPDX-FileCopyrightText: 2026 Maximilian Dolling
+# SPDX-FileContributor: AUTHORS.md
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 default_language_version:
   python: python3.13
 
@@ -30,6 +36,10 @@ repos:
     # Run the linter.
     - id: ruff-check
       args: [ --fix ]
+  - repo: https://github.com/fsfe/reuse-tool
+    rev: 'v6.2.0'
+    hooks:
+      - id: reuse
 
   - repo: local
     hooks:

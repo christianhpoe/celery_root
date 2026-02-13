@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+// SPDX-FileCopyrightText: 2026 Maximilian Dolling
+// SPDX-FileContributor: AUTHORS.md
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Live-refresh the log tail and keep the view anchored to the bottom.
 (function () {
   const REFRESH_INTERVAL_MS = 2000;

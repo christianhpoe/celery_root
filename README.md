@@ -1,3 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+SPDX-FileCopyrightText: 2026 Maximilian Dolling
+SPDX-FileContributor: AUTHORS.md
+
+SPDX-License-Identifier: BSD-3-Clause
+-->
+
 # Celery Root
 
 Docs: https://docs.celeryroot.eu
@@ -100,7 +108,7 @@ config = CeleryRootConfig(
     beat=BeatConfig(schedule_path=Path("./celerybeat-schedule")),
     prometheus=PrometheusConfig(port=8001, prometheus_path="/metrics"),
     open_telemetry=OpenTelemetryConfig(endpoint="http://localhost:4317"),
-    frontend=FrontendConfig(host="127.0.0.1", port=8000),
+    frontend=FrontendConfig(host="127.0.0.1", port=5555),
 )
 ```
 

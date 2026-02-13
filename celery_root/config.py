@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+# SPDX-FileCopyrightText: 2026 Maximilian Dolling
+# SPDX-FileContributor: AUTHORS.md
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Configuration settings for Celery Root."""
 
 from __future__ import annotations
@@ -17,7 +23,7 @@ class LoggingConfigFile(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True, extra="ignore")
 
-    log_dir: Path = Path("logs")
+    log_dir: Path = Path("./logs")
     log_rotation_hours: int = Field(default=24, gt=0)
     log_level: str = "INFO"
     delete_on_boot: bool = False
@@ -44,7 +50,7 @@ class DatabaseConfigSqlite(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True, extra="ignore")
 
-    db_path: Path = Path("celery_root.db")
+    db_path: Path = Path("./celery_root.db")
     retention_days: int = Field(default=7, gt=0)
     batch_size: int = Field(default=500, gt=0)
     flush_interval: float = Field(default=1.0, gt=0)
@@ -120,7 +126,7 @@ class FrontendConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="ignore")
 
     host: str = "127.0.0.1"
-    port: int = Field(default=8000, ge=1, le=MAX_PORT)
+    port: int = Field(default=5555, ge=1, le=MAX_PORT)
     debug: bool = True
     poll_interval: float = Field(default=2.0, gt=0)
     secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
