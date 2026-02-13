@@ -1,3 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+SPDX-FileCopyrightText: 2026 Maximilian Dolling
+SPDX-FileContributor: AUTHORS.md
+
+SPDX-License-Identifier: BSD-3-Clause
+-->
+
 # Celery Root Demo Workers
 
 This demo spins up three Celery workers with distinct task sets plus RabbitMQ, Redis, and Postgres via Docker Compose.

@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+# SPDX-FileCopyrightText: 2026 Maximilian Dolling
+# SPDX-FileContributor: AUTHORS.md
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 SHELL := /bin/sh
 
 .PHONY: build \
@@ -34,6 +40,14 @@ dist_clean:
 lint:
 	uv run pre-commit run --all-files
 
+test: test_ci
+	uv run coverage html
+
+test_ci:
+	uv run coverage run --branch -m pytest -q -vv
+	uv run coverage xml
+	uv run coverage report
+
 docker_network:
 	docker network create celery_root_demo || true
 
@@ -64,3 +78,6 @@ demo_graph_tasks:
 demo_root: clean build
 	uv run python celery_root/components/web/manage.py migrate
 	uv run python demo/main.py
+
+apply_license:
+	uv run reuse annotate -c "Christian-Hauke Poensgen" -c "Maximilian Dolling" -l "BSD-3-Clause" -y "2026" --contributor "AUTHORS.md" -r .

@@ -1,38 +1,77 @@
+# SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+# SPDX-FileCopyrightText: 2026 Maximilian Dolling
+# SPDX-FileContributor: AUTHORS.md
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
 [project]
 name = "celery_root"
 version = "0.1.0"
-description = "Celery Command & Control"
+description = "Command & Control for Celery Workers"
 readme = "README.md"
-requires-python = ">=3.13"
-license = { file = "LICENSE" }
+license = "BSD-3-Clause"
+license-files = ["LICENSES/BSD-3-Clause.txt"]
 authors = [{ name = "Christian-Hauke Poensgen" },{ name = "Maximilian Dolling" }]
-keywords = ["celery", "monitoring", "observability"]
-dependencies = [
-  "celery[tblib]",
-  "django",
-  "fastmcp",
-  "pydantic",
-  "pydantic-settings",
-  "sqlalchemy",
-  "uvicorn",
-  "prometheus-client",
-  "opentelemetry-sdk",
-  "opentelemetry-exporter-otlp",
-  "pydantic-settings>=2.12.0",
-  "pydantic-extra-types>=2.11.0",
-  "click>=8.3.1",
+keywords = [
+  "celery",
+  "monitoring",
+  "observability",
+  "mcp",
+  "prometheus",
+  "otel"
+]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Developers",
+    "Framework :: Celery",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development",
+    "Topic :: System :: Distributed Computing",
+    "Framework :: Celery",
+    "Typing :: Typed",
 ]
 
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "celery[tblib]>=5.0.5,<6",
+  "django>=4,<7",
+  "fastmcp>=2.12,<3",
+  "pydantic>=2.12",
+  "pydantic-settings>=2.5,<3",
+  "sqlalchemy>=2,<3",
+  "uvicorn>=0.35.0,<1",
+  "prometheus-client>=0.13.0,<1",
+  "opentelemetry-sdk>=1.30,<2",
+  "opentelemetry-exporter-otlp>=1.33,<2",
+  "click>=8.1",
+]
+
+[project.urls]
+Documentation = "https://docs.celeryroot.eu/"
+Repository = "https://github.com/christianhpoe/celery_root"
+Issues = "https://github.com/christianhpoe/celery_root/issues"
+
 [project.scripts]
-celery_root = "celery_root.cli:main"
+celery-root = "celery_root.cli:main"
 
 [project.entry-points."celery.commands"]
-celery_root = "celery_root.cli:celery_root"
+celery-root = "celery_root.cli:celery_root"
 
 [dependency-groups]
 dev = [
-  "celery[librabbitmq,redis]",
+  "celery[librabbitmq,redis,sqlalchemy]",
   "sqlalchemy",
   "psycopg2-binary",
   "mypy",
@@ -42,14 +81,14 @@ dev = [
   "pre-commit",
   "celery-types",
   "django-stubs",
+  "reuse",
+  "coverage>=7.13.4",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["celery_root"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"celery_root/components/web/templates" = "celery_root/components/web/templates"
-"celery_root/components/web/static" = "celery_root/components/web/static"
 "celery_root/py.typed" = "celery_root/py.typed"
 
 [tool.black]
@@ -57,7 +96,7 @@ line-length = 120
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -73,7 +112,7 @@ convention = "google"
 
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.12"
 files = ["celery_root", "tests", "demo"]
 plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
 follow_imports = "silent"
@@ -82,26 +121,7 @@ warn_unused_ignores = true
 disallow_any_generics = true
 no_implicit_reexport = true
 disallow_untyped_defs = true
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-  "django",
-  "django.*",
-  "celery",
-  "celery.*",
-  "kombu",
-  "kombu.*",
-  "amqp",
-  "amqp.*",
-  "billiard",
-  "billiard.*",
-  "redis",
-  "redis.*",
-  "vine",
-  "vine.*",
-]
-ignore_missing_imports = true
+ignore_missing_imports = false
 
 [tool.pytest.ini_options]
 log_cli = "True"
