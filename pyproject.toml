@@ -45,18 +45,17 @@ classifiers = [
 
 requires-python = ">=3.12,<3.15"
 dependencies = [
-  "celery[tblib]>=5.0.5",
-  "django",
-  "fastmcp",
-  "pydantic",
-  "pydantic-settings",
-  "sqlalchemy",
-  "uvicorn",
-  "prometheus-client",
-  "opentelemetry-sdk",
-  "opentelemetry-exporter-otlp",
-  "pydantic-extra-types",
-  "click",
+  "celery[tblib]>=5.0.5,<6",
+  "django>=4,<7",
+  "fastmcp>=2.12,<3",
+  "pydantic>=2.12",
+  "pydantic-settings>=2.5,<3",
+  "sqlalchemy>=2,<3",
+  "uvicorn>=0.35.0,<1",
+  "prometheus-client>=0.13.0,<1",
+  "opentelemetry-sdk>=1.30,<2",
+  "opentelemetry-exporter-otlp>=1.33,<2",
+  "click>=8.1",
 ]
 
 [project.urls]
