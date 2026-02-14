@@ -69,6 +69,7 @@ def _serialize_worker(worker: dashboard_views._WorkerSummary | dict[str, object]
         "last_seen_seconds": worker.get("last_seen_seconds"),
         "pool_size": worker.get("pool_size"),
         "active": worker.get("active"),
+        "processed": worker.get("processed"),
         "registered": worker.get("registered"),
         "queues": worker.get("queues"),
         "concurrency": worker.get("concurrency"),

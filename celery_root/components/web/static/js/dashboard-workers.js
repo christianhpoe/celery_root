@@ -37,6 +37,9 @@
   }
 
   function renderRow(worker, columns) {
+    const active = worker.active ?? 0;
+    const poolSize = worker.pool_size ?? "—";
+    const processed = worker.processed ?? 0;
     const cells = columns
       .map((state) => {
         const match = Array.isArray(worker.state_cells)
@@ -57,6 +60,9 @@
           </div>
         </td>
         <td><span class="badge ${worker.badge}">${worker.status}</span></td>
+        <td><a class="table-link" href="/tasks/?worker=${encodeURIComponent(worker.hostname)}&state=STARTED">${active}</a></td>
+        <td>${poolSize}</td>
+        <td><a class="table-link" href="/tasks/?worker=${encodeURIComponent(worker.hostname)}&state=SUCCESS,FAILURE,REVOKED">${processed}</a></td>
         ${cells}
         <td><small>${formatLastSeen(worker.last_seen_seconds, worker.status)}</small></td>
       </tr>
@@ -69,7 +75,7 @@
       return;
     }
     const rows = workers.map((worker) => renderRow(worker, columns)).join("");
-    tbody.innerHTML = rows || `<tr><td colspan="${columns.length + 3}">No workers reported.</td></tr>`;
+    tbody.innerHTML = rows || `<tr><td colspan="${columns.length + 6}">No workers reported.</td></tr>`;
   }
 
   function init(root) {

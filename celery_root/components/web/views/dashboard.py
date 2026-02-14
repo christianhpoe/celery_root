@@ -93,8 +93,14 @@ class _WorkerSummary(TypedDict):
     hostname: str
     status: str
     badge: str
+    active: int
+    pool_size: int | None
+    processed: int
     state_cells: list[_WorkerStateCell]
     last_seen_seconds: int | None
+    queues: list[str] | None
+    registered: int | None
+    concurrency: int | None
 
 
 class DashboardStats(TypedDict):
@@ -404,6 +410,9 @@ def _worker_summary(now: datetime) -> list[_WorkerSummary]:
             {"state": state, "count": stats.get(state, 0)} for state in _WORKER_STATE_COLUMNS
         ]
         active = stats.get("STARTED", 0) if worker.active_tasks is None else worker.active_tasks
+        processed = sum(stats.get(state, 0) for state in ("SUCCESS", "FAILURE", "REVOKED"))
+        pool_size = worker.pool_size
+        registered = len(worker.registered_tasks or []) or None
         status = _resolve_worker_status(worker.status, active, last_seen)
         badge = _WORKER_BADGES.get(status, "badge-muted")
         rows.append(
@@ -411,8 +420,14 @@ def _worker_summary(now: datetime) -> list[_WorkerSummary]:
                 "hostname": worker.hostname,
                 "status": status,
                 "badge": badge,
+                "active": active,
+                "pool_size": pool_size,
+                "processed": processed,
                 "state_cells": state_cells,
                 "last_seen_seconds": last_seen_seconds,
+                "queues": worker.queues,
+                "registered": registered,
+                "concurrency": pool_size,
             },
         )
     rows.sort(key=lambda row: row["hostname"])
