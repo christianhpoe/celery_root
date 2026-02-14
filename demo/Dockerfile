@@ -11,7 +11,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-COPY pyproject.toml uv.lock README.md LICENSE /app/
+COPY pyproject.toml uv.lock README.md LICENSES /app/
 COPY celery_root /app/celery_root
 COPY demo /app/demo
 
