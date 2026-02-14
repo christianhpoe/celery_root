@@ -138,6 +138,7 @@ root.run()
 
 Celery Root ships with an optional MCP server that exposes read-only tools over HTTP. It is designed for MCP clients (Codex CLI, Claude Code, etc.) to inspect the Celery Root store safely without write access.
 
+
 Configuration:
 
 - `CELERY_ROOT_MCP_ENABLED`: Enable the MCP server (`1`/`true`).
@@ -145,7 +146,7 @@ Configuration:
 - `CELERY_ROOT_MCP_PORT`: Port (default: `9100`).
 - `CELERY_ROOT_MCP_PATH`: Base path (default: `/mcp/`).
 - `CELERY_ROOT_MCP_AUTH_KEY`: Required auth token for clients.
-- `CELERY_ROOT_MCP_READONLY_DB_URL`: Optional read-only database URL (defaults to SQLite read-only mode using `CELERY_ROOT_DB_PATH`).
+- `CELERY_ROOT_MCP_READONLY_DB_URL`: Deprecated (RPC-based access replaces direct DB reads).
 
 Example:
 

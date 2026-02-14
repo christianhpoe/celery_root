@@ -42,6 +42,8 @@ class FakeDB(BaseDBController):
     def get_schema_version(self) -> int:
         return 1
 
+    def ensure_schema(self) -> None: ...
+
     def migrate(self, _from_version: int, _to_version: int) -> None: ...
 
     def store_task_event(self, _event: TaskEvent) -> None: ...
@@ -129,7 +131,7 @@ def test_smart_retry_resends_descendants_in_order() -> None:
             state="FAILURE",
             worker="dummy",
             args=json.dumps([1]),
-            kwargs="{}",
+            kwargs_="{}",
         ),
         "b": Task(
             task_id="b",
@@ -137,7 +139,7 @@ def test_smart_retry_resends_descendants_in_order() -> None:
             state="PENDING",
             worker="dummy",
             args=json.dumps([2]),
-            kwargs="{}",
+            kwargs_="{}",
         ),
         "c": Task(
             task_id="c",
@@ -145,7 +147,7 @@ def test_smart_retry_resends_descendants_in_order() -> None:
             state="PENDING",
             worker="dummy",
             args=json.dumps([3]),
-            kwargs="{}",
+            kwargs_="{}",
         ),
     }
     relations = [

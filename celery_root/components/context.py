@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from celery_root.config import CeleryRootConfig
-    from celery_root.core.db.adapters.base import BaseDBController
+    from celery_root.core.db import DbClient
     from celery_root.core.registry import WorkerRegistry
 
 
@@ -26,5 +26,5 @@ class ComponentContext:
 
     config: CeleryRootConfig
     registry: WorkerRegistry
-    db_factory: Callable[[], BaseDBController]
+    db_factory: Callable[[], DbClient]
     logger: logging.Logger

@@ -205,14 +205,13 @@ class ProcessManager:
         self,
         registry: WorkerRegistry,
         config: CeleryRootConfig,
-        controller_factory: Callable[[], BaseDBController],
+        controller_factory: Callable[[], BaseDBController] | None,
     ) -> None:
         """Initialize the process manager with runtime dependencies."""
         self._registry = registry
         self._config = config
         self._controller_factory = controller_factory
         self._logger = logging.getLogger(__name__)
-        self._queue: Queue[object] = Queue(maxsize=config.event_queue_maxsize)
         self._stop_event = Event()
         self._process_factories: dict[str, Callable[[], Process]] = {}
         self._processes: dict[str, Process] = {}
@@ -269,9 +268,8 @@ class ProcessManager:
         self._process_factories.clear()
         self._process_factories["db_manager"] = functools.partial(
             DBManager,
-            self._queue,
-            self._controller_factory,
             self._config,
+            self._controller_factory,
         )
         metrics_queues: list[Queue[object]] = []
         backend_map: dict[str, str] = {}
@@ -321,9 +319,8 @@ class ProcessManager:
             self._process_factories[name] = functools.partial(
                 EventListener,
                 broker_url,
-                self._queue,
                 self._config,
-                extra_queues=tuple(metrics_queues),
+                metrics_queues=tuple(metrics_queues),
             )
         if self._config.frontend is not None:
             self._process_factories["web"] = functools.partial(

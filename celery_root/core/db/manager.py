@@ -4,166 +4,267 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""DB manager process for ingesting events."""
+"""DB manager process for handling RPC requests."""
 
 from __future__ import annotations
 
 import logging
+import threading
 import time
+import uuid
 from contextlib import suppress
-from multiprocessing import Event, Process, Queue
-from queue import Empty
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from multiprocessing import Event, Process
+from multiprocessing.connection import Client, Listener
+from typing import TYPE_CHECKING, Any
+
+from pydantic import ValidationError
 
 from celery_root.config import set_settings
+from celery_root.core.db.adapters.memory import MemoryController
+from celery_root.core.db.adapters.sqlite import SQLiteController
+from celery_root.core.db.dispatch import RPC_OPERATIONS
 from celery_root.core.logging.setup import configure_process_logging
-
-from .models import TaskEvent, TaskRelation, WorkerEvent
+from celery_root.shared.schemas import RPC_SCHEMA_VERSION, RpcError, RpcRequestEnvelope, RpcResponseEnvelope
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from multiprocessing.connection import Connection
 
     from celery_root.config import CeleryRootConfig
+    from celery_root.core.db.adapters.base import BaseDBController
+    from celery_root.core.db.dispatch import RpcOperation
 
-    from .adapters.base import BaseDBController
+_DB_KIND_MEMORY = 0
+_DB_KIND_SQLITE = 1
 
-_SCHEMA_VERSION = 4
-_HEARTBEAT_INTERVAL = 60.0
+
+@dataclass(frozen=True, slots=True)
+class _ErrorContext:
+    request_id: str
+    op: str
+    duration_ms: float
+
+
+def _authkey_from_config(config: CeleryRootConfig) -> bytes | None:
+    auth = config.database.rpc_auth_key
+    if not auth:
+        return None
+    return auth.encode("utf-8")
+
+
+def _build_backend(
+    config: CeleryRootConfig,
+    controller_factory: Callable[[], BaseDBController] | None,
+) -> BaseDBController:
+    if controller_factory is not None:
+        return controller_factory()
+    db_kind = config.database.db_kind
+    if db_kind == _DB_KIND_MEMORY:
+        return MemoryController()
+    if db_kind == _DB_KIND_SQLITE:
+        return SQLiteController(config.database.db_path)
+    msg = f"Unsupported db_kind {db_kind}"
+    raise RuntimeError(msg)
 
 
 class DBManager(Process):
-    """Reads events from the queue and writes to the DB."""
+    """DB manager process hosting the RPC server."""
 
     def __init__(
         self,
-        queue: Queue[object],
-        controller_factory: Callable[[], BaseDBController],
         config: CeleryRootConfig,
+        controller_factory: Callable[[], BaseDBController] | None = None,
     ) -> None:
         """Create a DB manager process."""
         super().__init__(daemon=True)
-        self._queue = queue
-        self._controller_factory = controller_factory
         self._config = config
+        self._controller_factory = controller_factory
         self._stop_event = Event()
         self._logger = logging.getLogger(__name__)
+        self._address = (config.database.rpc_host, config.database.rpc_port)
+        self._authkey = _authkey_from_config(config)
 
     def stop(self) -> None:
         """Signal the DB manager to stop."""
         self._stop_event.set()
         with suppress(Exception):  # pragma: no cover - best effort
-            self._queue.put_nowait(None)
+            conn = Client(self._address, authkey=self._authkey)
+            conn.close()
 
     def run(self) -> None:
-        """Run the ingestion loop and write events to storage."""
+        """Run the RPC server loop."""
         set_settings(self._config)
         configure_process_logging(self._config, component="db_manager")
         self._logger.info("DBManager starting.")
-        controller = self._controller_factory()
+        controller = _build_backend(self._config, self._controller_factory)
         controller.initialize()
-        current_version = controller.get_schema_version()
-        if current_version != _SCHEMA_VERSION:
-            self._logger.info(
-                "DBManager migrating schema from %d to %d.",
-                current_version,
-                _SCHEMA_VERSION,
-            )
-            controller.migrate(current_version, _SCHEMA_VERSION)
-
-        batch: list[object] = []
-        last_flush = time.monotonic()
-        last_heartbeat = last_flush
+        controller.ensure_schema()
 
         try:
-            while True:
-                if self._stop_event.is_set() and self._queue.empty():
-                    break
-                timeout = max(self._config.database.flush_interval - (time.monotonic() - last_flush), 0.0)
-                try:
-                    item = self._queue.get(timeout=timeout)
-                except Empty:
-                    item = None
-
-                now = time.monotonic()
-                if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
-                    self._logger.info("DBManager heartbeat.")
-                    last_heartbeat = now
-
-                if item is None:
-                    if self._stop_event.is_set():
-                        break
-                else:
-                    batch.append(item)
-
-                if batch and (
-                    len(batch) >= self._config.database.batch_size
-                    or (now - last_flush) >= self._config.database.flush_interval
-                ):
-                    self._flush(batch, controller)
-                    last_flush = now
+            self._serve(controller)
         except KeyboardInterrupt:
             self._logger.info("DBManager interrupted; shutting down.")
-            self._stop_event.set()
         finally:
-            if batch:
-                self._flush(batch, controller)
             controller.close()
             self._logger.info("DBManager stopped.")
 
-    def _flush(self, batch: list[object], controller: BaseDBController) -> None:
-        task_events = 0
-        worker_events = 0
-        other_events = 0
-        for item in batch:
-            if isinstance(item, TaskEvent):
-                controller.store_task_event(item)
-                self._store_relations(controller, item)
-                task_events += 1
-            elif isinstance(item, WorkerEvent):
-                controller.store_worker_event(item)
-                worker_events += 1
-            elif isinstance(item, TaskRelation):
-                controller.store_task_relation(item)
-                other_events += 1
-            else:  # pragma: no cover - defensive
-                self._logger.debug("DBManager ignored unknown event %r", item)
-                other_events += 1
-        if batch:
-            self._logger.debug(
-                "DBManager flushed %d task events, %d worker events, %d other items.",
-                task_events,
-                worker_events,
-                other_events,
+    def _serve(self, controller: BaseDBController) -> None:
+        lock = threading.Lock()
+        inflight = threading.BoundedSemaphore(self._config.database.rpc_max_inflight)
+        listener = Listener(self._address, authkey=self._authkey)
+        self._logger.info("DBManager listening on %s:%s", *self._address)
+
+        def _watch_stop() -> None:
+            self._stop_event.wait()
+            with suppress(Exception):
+                listener.close()
+
+        threading.Thread(target=_watch_stop, daemon=True).start()
+
+        while not self._stop_event.is_set():
+            try:
+                conn = listener.accept()
+            except OSError:
+                break
+            threading.Thread(
+                target=self._handle_connection,
+                args=(conn, controller, lock, inflight),
+                daemon=True,
+            ).start()
+
+    def _handle_connection(
+        self,
+        conn: Connection,
+        controller: BaseDBController,
+        lock: threading.Lock,
+        inflight: threading.BoundedSemaphore,
+    ) -> None:
+        with conn:
+            while not self._stop_event.is_set():
+                try:
+                    data = conn.recv_bytes()
+                except EOFError:
+                    break
+                if not inflight.acquire(blocking=False):
+                    response = self._error_response(
+                        request_id=uuid.uuid4().hex,
+                        code="BUSY",
+                        message="DB manager is busy",
+                    )
+                    conn.send_bytes(response)
+                    continue
+                try:
+                    response = self._dispatch(data, controller, lock)
+                finally:
+                    inflight.release()
+                with suppress(Exception):
+                    conn.send_bytes(response)
+
+    def _dispatch(
+        self,
+        data: bytes,
+        controller: BaseDBController,
+        lock: threading.Lock,
+    ) -> bytes:
+        request_id = uuid.uuid4().hex
+        op = "unknown"
+        start = time.monotonic()
+        max_bytes = self._config.database.rpc_max_message_bytes
+
+        try:
+            if len(data) > max_bytes:
+                return self._error_response(
+                    request_id=request_id,
+                    code="MESSAGE_TOO_LARGE",
+                    message="RPC request exceeded max message size",
+                )
+            envelope = RpcRequestEnvelope.model_validate_json(data)
+            request_id = envelope.request_id
+            op = envelope.op
+            if envelope.schema_version != RPC_SCHEMA_VERSION:
+                return self._error_response(
+                    request_id=request_id,
+                    code="SCHEMA_UNSUPPORTED",
+                    message="Unsupported RPC schema version",
+                )
+            operation = RPC_OPERATIONS.get(op)
+            if operation is None:
+                return self._error_response(
+                    request_id=request_id,
+                    code="OP_NOT_FOUND",
+                    message=f"Unknown operation: {op}",
+                )
+            response_payload = self._handle_operation(operation, envelope.payload, controller, lock)
+            response = RpcResponseEnvelope(
+                request_id=request_id,
+                ok=True,
+                payload=response_payload,
+                timestamp=datetime.now(UTC),
             )
-        batch.clear()
+            duration_ms = (time.monotonic() - start) * 1000.0
+            self._logger.info(
+                "DB RPC %s %s ok duration_ms=%.1f",
+                request_id,
+                op,
+                duration_ms,
+            )
+            return response.model_dump_json().encode("utf-8")
+        except ValidationError as exc:
+            duration_ms = (time.monotonic() - start) * 1000.0
+            context = _ErrorContext(request_id=request_id, op=op, duration_ms=duration_ms)
+            return self._handle_error(context, "VALIDATION_ERROR", "Invalid RPC payload", exc)
+        except Exception as exc:  # pragma: no cover - defensive  # noqa: BLE001
+            duration_ms = (time.monotonic() - start) * 1000.0
+            context = _ErrorContext(request_id=request_id, op=op, duration_ms=duration_ms)
+            return self._handle_error(context, "SERVER_ERROR", "RPC handler failed", exc)
+
+    def _handle_operation(
+        self,
+        operation: RpcOperation[Any, Any],
+        payload: dict[str, Any] | list[Any] | None,
+        controller: BaseDBController,
+        lock: threading.Lock,
+    ) -> dict[str, Any] | list[Any] | None:
+        payload_dict = payload if isinstance(payload, dict) else {}
+        request_model = operation.request_model.model_validate(payload_dict)
+        with lock:
+            response_model = operation.handler(controller, request_model)
+        return response_model.model_dump(mode="json")
+
+    def _handle_error(
+        self,
+        context: _ErrorContext,
+        code: str,
+        message: str,
+        exc: Exception,
+    ) -> bytes:
+        details: dict[str, Any] | None = None
+        if isinstance(exc, ValidationError):
+            details = {"errors": exc.errors()}
+        error = RpcError(code=code, message=message, details=details)
+        self._logger.info(
+            "DB RPC %s %s error=%s duration_ms=%.1f",
+            context.request_id,
+            context.op,
+            code,
+            context.duration_ms,
+        )
+        response = RpcResponseEnvelope(
+            request_id=context.request_id,
+            ok=False,
+            error=error,
+            timestamp=datetime.now(UTC),
+        )
+        return response.model_dump_json().encode("utf-8")
 
     @staticmethod
-    def _store_relations(controller: BaseDBController, event: TaskEvent) -> None:
-        root_id = event.root_id or event.task_id
-        if event.parent_id:
-            controller.store_task_relation(
-                TaskRelation(
-                    root_id=root_id,
-                    parent_id=event.parent_id,
-                    child_id=event.task_id,
-                    relation="parent",
-                ),
-            )
-        if event.group_id:
-            controller.store_task_relation(
-                TaskRelation(
-                    root_id=root_id,
-                    parent_id=event.group_id,
-                    child_id=event.task_id,
-                    relation="group",
-                ),
-            )
-        if event.chord_id:
-            controller.store_task_relation(
-                TaskRelation(
-                    root_id=root_id,
-                    parent_id=event.chord_id,
-                    child_id=event.task_id,
-                    relation="chord",
-                ),
-            )
+    def _error_response(request_id: str, code: str, message: str) -> bytes:
+        response = RpcResponseEnvelope(
+            request_id=request_id,
+            ok=False,
+            error=RpcError(code=code, message=message),
+            timestamp=datetime.now(UTC),
+        )
+        return response.model_dump_json().encode("utf-8")

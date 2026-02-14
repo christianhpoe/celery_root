@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from celery import Celery
 
-    from celery_root.core.db.adapters.base import BaseDBController
+    from celery_root.core.db import DbClient
 
     class _CrontabSpec(Protocol):
         minute: str
@@ -127,7 +127,7 @@ class BeatBackend:
 class BeatController:
     """Integrates with Celery beat backends (file-based or django-celery-beat)."""
 
-    def __init__(self, app: Celery, db: BaseDBController | None = None) -> None:
+    def __init__(self, app: Celery, db: DbClient | None = None) -> None:
         """Initialize the controller for a Celery app."""
         self._app = app
         self._app_label = _resolve_app_name(app)
@@ -211,7 +211,7 @@ class BeatController:
         entry_name = schedule.schedule_id or schedule.name
         schedule_obj = _parse_schedule(schedule.schedule)
         args = _parse_args(schedule.args)
-        kwargs = _parse_kwargs(schedule.kwargs)
+        kwargs = _parse_kwargs(schedule.kwargs_)
         self._update_app_schedule(
             entry_name,
             schedule.task,
@@ -257,7 +257,7 @@ class BeatController:
             task=str(entry.task),
             schedule=schedule_str,
             args=_dump_json(entry.args),
-            kwargs=_dump_json(entry.kwargs),
+            kwargs_=_dump_json(entry.kwargs),
             enabled=bool(entry.options.get("enabled", True)) if entry.options else True,
             last_run_at=_coerce_datetime(entry.last_run_at),
             total_run_count=int(entry.total_run_count or 0),
@@ -278,7 +278,7 @@ class BeatController:
                     task=task.task,
                     schedule=schedule_str,
                     args=task.args,
-                    kwargs=task.kwargs,
+                    kwargs_=task.kwargs,
                     enabled=bool(task.enabled),
                     last_run_at=_coerce_datetime(task.last_run_at),
                     total_run_count=int(task.total_run_count or 0),
@@ -294,7 +294,7 @@ class BeatController:
         periodic.task = schedule.task
         periodic.enabled = schedule.enabled
         periodic.args = schedule.args or "[]"
-        periodic.kwargs = schedule.kwargs or "{}"
+        periodic.kwargs = schedule.kwargs_ or "{}"
 
         cron_fields = _parse_cron_fields(schedule.schedule)
         if cron_fields is not None:

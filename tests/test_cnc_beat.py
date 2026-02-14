@@ -38,6 +38,8 @@ class FakeDB(BaseDBController):
     def get_schema_version(self) -> int:
         return 1
 
+    def ensure_schema(self) -> None: ...
+
     def migrate(self, _from_version: int, _to_version: int) -> None: ...
 
     def store_task_event(self, _event: TaskEvent) -> None: ...
@@ -130,7 +132,7 @@ def test_schedule_crud_via_db_controller() -> None:
         task="tasks.cleanup",
         schedule="0 2 * * *",
         args=None,
-        kwargs=None,
+        kwargs_=None,
         enabled=True,
         last_run_at=datetime.now(UTC),
         total_run_count=5,

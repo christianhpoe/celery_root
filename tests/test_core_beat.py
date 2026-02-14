@@ -46,7 +46,7 @@ def test_file_backend_list_save_delete(tmp_path: Path) -> None:
         task="tasks.heartbeat",
         schedule="interval:30",
         args="[]",
-        kwargs="{}",
+        kwargs_="{}",
         enabled=True,
         last_run_at=datetime.now(UTC),
         total_run_count=0,

@@ -69,7 +69,7 @@ def smart_retry(
         current = db.get_task(task_id)
         if current is None or current.name is None or current.worker is None:
             continue
-        args, kwargs = _parse_args_kwargs(current.args, current.kwargs)
+        args, kwargs = _parse_args_kwargs(current.args, current.kwargs_)
         result = send(
             registry,
             current.worker,

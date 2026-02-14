@@ -9,23 +9,21 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, cast
 
 import django
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
-from sqlalchemy import inspect, text
 
 from celery_root.components.web.views import dashboard as dashboard_views
 from celery_root.config import McpConfig, get_settings
-
-from .db import QueryResult, create_readonly_engine
+from celery_root.core.db.rpc_client import DbRpcClient
 
 if TYPE_CHECKING:
     from collections.abc import MutableMapping
 
-    from sqlalchemy.engine import Row
+    from celery_root.shared.schemas.domain import Task
 
     ASGIMessage = MutableMapping[str, object]
     ASGIReceive = Callable[[], Awaitable[ASGIMessage]]
@@ -96,87 +94,57 @@ def _build_auth(config: McpConfig) -> StaticTokenVerifier | None:
     return StaticTokenVerifier(tokens={config.auth_key: {"client_id": "celery_root_mcp"}})
 
 
-def _row_to_dict(row: Row[tuple[object, ...]]) -> dict[str, object]:
-    mapping = row._mapping  # noqa: SLF001
-    return {key: mapping[key] for key in mapping}
+def _percentile(values: list[float], pct: float) -> float | None:
+    if not values:
+        return None
+    if pct <= 0:
+        return values[0]
+    if pct >= 1:
+        return values[-1]
+    index = (len(values) - 1) * pct
+    lower = int(index)
+    upper = min(lower + 1, len(values) - 1)
+    if lower == upper:
+        return values[lower]
+    weight = index - lower
+    return values[lower] + (values[upper] - values[lower]) * weight
 
 
-def _serialize_query_result(result: QueryResult) -> dict[str, object]:
-    return {
-        "columns": result.columns,
-        "rows": result.rows,
-        "truncated": result.truncated,
-    }
-
-
-def _execute_readonly_query(
-    sql: str,
-    params: Mapping[str, object] | None,
-    limit: int,
-) -> QueryResult:
-    engine = create_readonly_engine()
-    with engine.connect() as conn:
-        result = conn.execute(text(sql), params or {})
-        rows = result.fetchmany(limit + 1)
-        columns = list(result.keys())
-    truncated = len(rows) > limit
-    if truncated:
-        rows = rows[:limit]
-    row_dicts = [_row_to_dict(row) for row in rows]
-    return QueryResult(columns=columns, rows=row_dicts, truncated=truncated)
-
-
-def _fetch_task_stats() -> list[dict[str, object]]:
-    sql = """
-    WITH base AS (
-        SELECT COALESCE(name, 'unknown') AS name, runtime
-        FROM tasks
-    ),
-    counts AS (
-        SELECT name, COUNT(*) AS count
-        FROM base
-        GROUP BY name
-    ),
-    runtimes AS (
-        SELECT name, runtime
-        FROM base
-        WHERE runtime IS NOT NULL
-    ),
-    ordered AS (
-        SELECT
-            name,
-            runtime,
-            COUNT(*) OVER (PARTITION BY name) AS n,
-            ROW_NUMBER() OVER (PARTITION BY name ORDER BY runtime) AS rn
-        FROM runtimes
-    ),
-    pcts AS (
-        SELECT
-            name,
-            AVG(runtime) AS avg_runtime,
-            MIN(runtime) AS min_runtime,
-            MAX(runtime) AS max_runtime,
-            MAX(CASE WHEN rn = CAST(((n - 1) * 0.95) AS INTEGER) + 1 THEN runtime END) AS p95,
-            MAX(CASE WHEN rn = CAST(((n - 1) * 0.99) AS INTEGER) + 1 THEN runtime END) AS p99
-        FROM ordered
-        GROUP BY name
-    )
-    SELECT
-        counts.name AS name,
-        counts.count AS count,
-        pcts.avg_runtime AS avg,
-        pcts.p95 AS p95,
-        pcts.p99 AS p99,
-        pcts.min_runtime AS min,
-        pcts.max_runtime AS max
-    FROM counts
-    LEFT JOIN pcts ON counts.name = pcts.name
-    ORDER BY counts.count DESC, counts.name ASC
-    """
-    engine = create_readonly_engine()
-    with engine.connect() as conn:
-        rows = conn.execute(text(sql)).fetchall()
-    return [_row_to_dict(row) for row in rows]
+def _fetch_task_stats(db: DbRpcClient) -> list[dict[str, object]]:
+    tasks = db.get_tasks()
+    grouped: dict[str, list[Task]] = {}
+    for task in tasks:
+        name = task.name or "unknown"
+        grouped.setdefault(name, []).append(task)
+    rows: list[dict[str, object]] = []
+    for name, group in grouped.items():
+        runtimes = sorted([task.runtime for task in group if task.runtime is not None])
+        count = len(group)
+        if runtimes:
+            avg = sum(runtimes) / len(runtimes)
+            min_runtime = runtimes[0]
+            max_runtime = runtimes[-1]
+            p95 = _percentile(runtimes, 0.95)
+            p99 = _percentile(runtimes, 0.99)
+        else:
+            avg = None
+            min_runtime = None
+            max_runtime = None
+            p95 = None
+            p99 = None
+        rows.append(
+            {
+                "name": name,
+                "count": count,
+                "avg": avg,
+                "p95": p95,
+                "p99": p99,
+                "min": min_runtime,
+                "max": max_runtime,
+            },
+        )
+    rows.sort(key=lambda row: (-int(cast("int", row["count"])), str(row["name"])))
+    return rows
 
 
 def create_mcp_server() -> FastMCP:
@@ -193,77 +161,19 @@ def create_mcp_server() -> FastMCP:
 
     @mcp.tool(name="fetch_schema")
     def fetch_schema() -> dict[str, object]:
-        """Return the current database schema as structured metadata.
-
-        Uses a read-only database connection so that accidental writes are rejected
-        by the database itself. For non-SQLite databases, configure a read-only
-        account via CELERY_ROOT_MCP_READONLY_DB_URL.
-
-        Returns:
-            A dictionary with the SQL dialect name and table/column details.
-        """
-        engine = create_readonly_engine()
-        inspector = inspect(engine)
-        tables: dict[str, object] = {}
-        for table in inspector.get_table_names():
-            columns = inspector.get_columns(table)
-            tables[table] = {
-                "columns": [
-                    {
-                        "name": column["name"],
-                        "type": str(column["type"]),
-                        "nullable": bool(column.get("nullable", True)),
-                        "default": column.get("default"),
-                        "primary_key": bool(column.get("primary_key", False)),
-                    }
-                    for column in columns
-                ],
-                "indexes": inspector.get_indexes(table),
-            }
-        return {
-            "dialect": engine.dialect.name,
-            "tables": tables,
-        }
-
-    @mcp.tool(name="run_query")
-    def run_query(
-        sql: str,
-        params: Mapping[str, object] | None = None,
-        limit: int = 500,
-    ) -> dict[str, object]:
-        """Execute a SQL query via a read-only connection and return rows.
-
-        This tool is intended for SELECT-style analytics. It uses a read-only
-        database connection; attempts to write will be rejected by the database.
-
-        Args:
-            sql: The SQL statement to execute. Use SELECT/WITH statements.
-            params: Optional query parameters (bind variables).
-            limit: Maximum number of rows to return. Additional rows are truncated.
-
-        Returns:
-            A dictionary with `columns`, `rows`, and `truncated` fields.
-        """
-        if limit <= 0:
-            msg = "limit must be a positive integer"
-            raise ValueError(msg)
-        normalized = sql.lstrip().lower()
-        if not normalized.startswith(("select", "with")):
-            msg = "Only SELECT/WITH queries are allowed"
-            raise ValueError(msg)
-        return _serialize_query_result(_execute_readonly_query(sql, params, limit))
+        """Return the current database schema as structured metadata."""
+        with DbRpcClient.from_config(config, client_name="mcp") as db:
+            schema = db.get_schema()
+        return cast("dict[str, object]", schema.model_dump(mode="json"))
 
     @mcp.tool(name="stats")
     def stats() -> dict[str, object]:
-        """Return dashboard statistics equivalent to the UI frontend.
-
-        The payload mirrors the dashboard data shown in the web UI, including:
-        summary cards, state breakdowns, throughput series, heatmap data,
-        worker summaries, and recent activity.
-        """
+        """Return dashboard statistics equivalent to the UI frontend."""
         _ensure_django()
         payload = dashboard_views.dashboard_stats()
-        return cast("dict[str, object]", {**payload, "task_stats": _fetch_task_stats()})
+        with DbRpcClient.from_config(config, client_name="mcp") as db:
+            task_stats = _fetch_task_stats(db)
+        return cast("dict[str, object]", {**payload, "task_stats": task_stats})
 
     return mcp
 

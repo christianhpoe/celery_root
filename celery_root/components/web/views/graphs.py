@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
     from django.http import HttpRequest, HttpResponse
 
-    from celery_root.core.db.adapters.base import BaseDBController
+    from celery_root.core.db import DbClient
     from celery_root.core.db.models import Task, TaskRelation
 
 _TASK_NOT_FOUND = "Task not found"
@@ -177,7 +177,7 @@ def _serialize_node(task: Task | None, node_id: str, kind: str | None, root_id: 
         "queue": None,
         "worker": task.worker if task is not None else None,
         "args_preview": _truncate(task.args) if task is not None else None,
-        "kwargs_preview": _truncate(task.kwargs) if task is not None else None,
+        "kwargs_preview": _truncate(task.kwargs_) if task is not None else None,
         "result_preview": _truncate(task.result) if task is not None else None,
         "traceback_preview": _truncate(task.traceback) if task is not None else None,
         "stamps_preview": _truncate(task.stamps) if task is not None else None,
@@ -229,7 +229,7 @@ def _append_edge(
 def _collect_nodes_and_edges(
     root_id: str,
     relations: Sequence[TaskRelation],
-    db: BaseDBController,
+    db: DbClient,
 ) -> tuple[set[str], list[dict[str, str | None]]]:
     node_ids: set[str] = {root_id}
     edges = _build_edges(relations)
@@ -290,7 +290,7 @@ def _build_state_counts(nodes_payload: Sequence[GraphNode]) -> GraphCounts:
     return counts
 
 
-def _build_graph_payload(task_id: str, db: BaseDBController) -> GraphPayload:
+def _build_graph_payload(task_id: str, db: DbClient) -> GraphPayload:
     task = db.get_task(task_id)
     if task is None:
         raise Http404(_TASK_NOT_FOUND)

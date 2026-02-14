@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, TypedDict
 
@@ -456,7 +456,7 @@ def dashboard_stats(now: datetime | None = None) -> DashboardStats:
         "heatmap": heatmap,
         "workers": worker_rows(timestamp),
         "activity_feed": activity,
-        "runtime_stats": asdict(metrics.runtime_stats),
+        "runtime_stats": metrics.runtime_stats.model_dump(),
     }
 
 

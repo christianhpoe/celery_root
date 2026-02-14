@@ -50,11 +50,18 @@ class DatabaseConfigSqlite(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True, extra="ignore")
 
+    db_kind: int = 1
     db_path: Path = Path("./celery_root.db")
     retention_days: int = Field(default=7, gt=0)
     batch_size: int = Field(default=500, gt=0)
     flush_interval: float = Field(default=1.0, gt=0)
     purge_db: bool = False
+    rpc_host: str = "127.0.0.1"
+    rpc_port: int = Field(default=8765, ge=1, le=MAX_PORT)
+    rpc_auth_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    rpc_max_message_bytes: int = Field(default=4_194_304, gt=0)
+    rpc_max_inflight: int = Field(default=64, gt=0)
+    rpc_timeout_seconds: float = Field(default=5.0, gt=0)
 
     @field_validator("db_path", mode="after")
     @classmethod
@@ -149,7 +156,7 @@ class McpConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="ignore")
 
     host: str = "127.0.0.1"
-    port: int = Field(default=9100, ge=1, le=MAX_PORT)
+    port: int = Field(default=5557, ge=1, le=MAX_PORT)
     path: str = "/mcp/"
     auth_key: str | None = None
     readonly_db_url: str | None = None

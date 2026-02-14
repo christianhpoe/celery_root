@@ -48,7 +48,7 @@ def _task_event(  # noqa: PLR0913
     name: str = "tests.add",
     worker: str | None = None,
     args: str | None = None,
-    kwargs: str | None = None,
+    kwargs_: str | None = None,
     result: str | None = None,
     traceback: str | None = None,
     runtime: float | None = None,
@@ -67,7 +67,7 @@ def _task_event(  # noqa: PLR0913
         timestamp=timestamp,
         worker=worker,
         args=args,
-        kwargs=kwargs,
+        kwargs_=kwargs_,
         result=result,
         traceback=traceback,
         runtime=runtime,
@@ -105,7 +105,7 @@ def test_filters_and_search(controller: BaseDBController) -> None:
             "SUCCESS",
             base + timedelta(minutes=2),
             name="tests.add",
-            kwargs='{"x": 1}',
+            kwargs_='{"x": 1}',
         ),
     )
 

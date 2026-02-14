@@ -44,7 +44,7 @@ def _task_timestamp(task: Task) -> datetime | None:
 
 
 def _matches_search(task: Task, search: str) -> bool:
-    haystack = (f"{task.name or ''} {task.task_id} {task.worker or ''} {task.args or ''} {task.kwargs or ''}").lower()
+    haystack = (f"{task.name or ''} {task.task_id} {task.worker or ''} {task.args or ''} {task.kwargs_ or ''}").lower()
     return search.lower() in haystack
 
 
@@ -85,6 +85,12 @@ class MemoryController(BaseDBController):
     def get_schema_version(self) -> int:
         """Return the in-memory schema version."""
         return self._schema_version if self._initialized else 0
+
+    def ensure_schema(self) -> None:
+        """Ensure the in-memory schema version is current."""
+        current = self.get_schema_version()
+        if current != self._schema_version:
+            self.migrate(current, self._schema_version)
 
     def migrate(self, from_version: int, to_version: int) -> None:
         """Update the stored schema version when needed."""
@@ -357,7 +363,7 @@ class MemoryController(BaseDBController):
                 "name": event.name,
                 "worker": event.worker,
                 "args": event.args,
-                "kwargs": event.kwargs,
+                "kwargs_": event.kwargs_,
                 "result": event.result,
                 "traceback": event.traceback,
                 "stamps": event.stamps,

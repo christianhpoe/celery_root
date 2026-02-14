@@ -19,13 +19,12 @@ from typing import TYPE_CHECKING
 from celery import Celery
 from django.conf import settings
 
-from celery_root.core.db.adapters.sqlite import SQLiteController
+from celery_root.config import get_settings
+from celery_root.core.db.rpc_client import DbRpcClient
 from celery_root.core.registry import WorkerRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
-
-    from celery_root.core.db.adapters.base import BaseDBController
 
 
 @dataclass(slots=True)
@@ -100,21 +99,21 @@ def retention_days() -> int:
 
 
 @contextmanager
-def open_db() -> Iterator[BaseDBController]:
-    """Open a DB controller for a request and close it afterwards."""
-    controller = SQLiteController(db_path())
-    controller.initialize()
-    days = retention_days()
-    if days > 0 and _should_cleanup(time.monotonic()):
-        removed = controller.cleanup(days)
-        if removed:
-            _LOGGER.info("DB cleanup removed %d records older than %d days.", removed, days)
-        else:
-            _LOGGER.debug("DB cleanup ran; no records removed.")
+def open_db() -> Iterator[DbRpcClient]:
+    """Open a DB RPC client for a request and close it afterwards."""
+    config = get_settings()
+    client = DbRpcClient.from_config(config, client_name="web")
     try:
-        yield controller
+        days = retention_days()
+        if days > 0 and _should_cleanup(time.monotonic()):
+            removed = client.cleanup(days)
+            if removed:
+                _LOGGER.info("DB cleanup removed %d records older than %d days.", removed, days)
+            else:
+                _LOGGER.debug("DB cleanup ran; no records removed.")
+        yield client
     finally:
-        controller.close()
+        client.close()
 
 
 def get_registry() -> WorkerRegistry:

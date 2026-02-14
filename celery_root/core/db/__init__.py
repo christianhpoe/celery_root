@@ -20,9 +20,15 @@ from .models import (
     WorkerEvent,
     WorkerStats,
 )
+from .rpc_client import DbRpcClient, RpcCallError
+
+DbClient = BaseDBController
 
 __all__ = [
     "BaseDBController",
+    "DbClient",
+    "DbRpcClient",
+    "RpcCallError",
     "Schedule",
     "Task",
     "TaskEvent",

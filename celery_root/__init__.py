@@ -41,6 +41,9 @@ if TYPE_CHECKING:
 
 
 _RETENTION_ARG_POSITIVE_ERROR = "retention_days must be positive"
+_DB_KIND_MEMORY = 0
+_DB_KIND_SQLITE = 1
+_DB_KIND_CUSTOM = 99
 
 
 class CeleryRoot:
@@ -95,18 +98,23 @@ class CeleryRoot:
         self._process_manager = manager
         manager.run()
 
-    def _resolve_db_controller_factory(self) -> Callable[[], BaseDBController]:
+    def _resolve_db_controller_factory(self) -> Callable[[], BaseDBController] | None:
         if self._db_controller is not None and callable(self._db_controller):
+            self.config.database.db_kind = _DB_KIND_CUSTOM
             return self._db_controller
         if isinstance(self._db_controller, SQLiteController):
+            self.config.database.db_kind = _DB_KIND_SQLITE
             path = getattr(self._db_controller, "_path", self.config.database.db_path)
-            return functools.partial(_make_sqlite_controller, path)
+            self.config.database.db_path = Path(path).expanduser().resolve()
+            return None
         if isinstance(self._db_controller, MemoryController):
-            return functools.partial(_return_controller, self._db_controller)
+            self.config.database.db_kind = _DB_KIND_MEMORY
+            return None
         if isinstance(self._db_controller, BaseDBController):
+            self.config.database.db_kind = _DB_KIND_CUSTOM
             controller = self._db_controller
             return functools.partial(_return_controller, controller)
-        return functools.partial(_make_sqlite_controller, self.config.database.db_path)
+        return None
 
     def _ensure_sqlite_db_path(self) -> None:
         controller = self._db_controller

@@ -42,6 +42,11 @@ class BaseDBController(ABC):
         ...
 
     @abstractmethod
+    def ensure_schema(self) -> None:
+        """Ensure the backend schema is up to date."""
+        ...
+
+    @abstractmethod
     def migrate(self, from_version: int, to_version: int) -> None:
         """Migrate the storage schema to a target version."""
         ...

@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-import multiprocessing
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -18,6 +18,7 @@ import pytest
 from celery_root.config import CeleryRootConfig, DatabaseConfigSqlite, get_settings
 from celery_root.core.db.adapters.sqlite import SQLiteController
 from celery_root.core.db.manager import DBManager
+from celery_root.core.db.rpc_client import DbRpcClient
 from celery_root.core.event_listener import EventListener
 from tests.fixtures.app_one import app as app_one
 from tests.fixtures.app_two import app as app_two
@@ -30,6 +31,29 @@ pytestmark = pytest.mark.skipif(
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_db_manager(config: CeleryRootConfig, timeout_seconds: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    client = DbRpcClient.from_config(config, client_name="tests")
+    try:
+        while time.monotonic() < deadline:
+            try:
+                client.ping()
+            except (OSError, RuntimeError):
+                time.sleep(0.05)
+            else:
+                return
+        msg = "DB manager did not become ready in time"
+        raise RuntimeError(msg)
+    finally:
+        client.close()
 
 
 def _start_worker(module: str) -> subprocess.Popen[str]:
@@ -62,19 +86,27 @@ def test_integration_event_pipeline(tmp_path: Path) -> None:
     listeners: list[EventListener] = []
     db_manager: DBManager | None = None
     try:
-        queue: multiprocessing.Queue[object] = multiprocessing.Queue()
-        config = CeleryRootConfig(database=DatabaseConfigSqlite(batch_size=1, flush_interval=0.2))
         db_path = tmp_path / "integration.sqlite3"
+        rpc_port = _free_port()
+        config = CeleryRootConfig(
+            database=DatabaseConfigSqlite(
+                batch_size=1,
+                flush_interval=0.2,
+                db_path=db_path,
+                rpc_port=rpc_port,
+            ),
+        )
 
         def factory() -> SQLiteController:
             return SQLiteController(db_path)
 
-        db_manager = DBManager(queue, factory, config)
+        db_manager = DBManager(config, factory)
         db_manager.start()
+        _wait_for_db_manager(config)
 
         listeners = [
-            EventListener(str(app_one.conf.broker_url), queue),
-            EventListener(str(app_two.conf.broker_url), queue),
+            EventListener(str(app_one.conf.broker_url), config),
+            EventListener(str(app_two.conf.broker_url), config),
         ]
         for listener in listeners:
             listener.start()

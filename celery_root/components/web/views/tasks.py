@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from celery import Celery
     from django.http import HttpRequest, HttpResponse, QueryDict
 
-    from celery_root.core.db.adapters.base import BaseDBController
+    from celery_root.core.db import DbClient
     from celery_root.core.db.models import TaskRelation
 
 _TASK_NOT_FOUND = "Task not found"
@@ -213,7 +213,7 @@ def _task_to_view(task: Task) -> _TaskView:
         "done": state in _FINAL_STATES,
         "timestamp": timestamp,
         "args": task.args or "",
-        "kwargs": task.kwargs or "",
+        "kwargs": task.kwargs_ or "",
         "retries": task.retries,
         "result": task.result,
         "traceback": task.traceback,
@@ -1088,7 +1088,7 @@ def _build_relations(task: Task) -> list[dict[str, str]]:
     return steps
 
 
-def _build_task_link(db: BaseDBController, task_id: str) -> _TaskLink:
+def _build_task_link(db: DbClient, task_id: str) -> _TaskLink:
     task = db.get_task(task_id)
     if task is None:
         return {
@@ -1184,7 +1184,7 @@ def build_relations(task: _TaskEntry) -> list[dict[str, str]]:
         finished=task.get("finished"),
         runtime=task["runtime"],
         args=task["args"],
-        kwargs=task["kwargs"],
+        kwargs_=task["kwargs"],
         result=task["result"],
         traceback=task["traceback"],
         retries=task["retries"],
@@ -1296,7 +1296,7 @@ def task_retry(_request: HttpRequest, task_id: str) -> HttpResponse:
         return HttpResponseBadRequest("No Celery workers configured")
 
     args = _parse_args(task.args or "")
-    kwargs = _parse_kwargs(task.kwargs or "")
+    kwargs = _parse_kwargs(task.kwargs_ or "")
     args = cast("list[object]", _strip_ellipsis(args))
     kwargs = cast("dict[str, object]", _strip_ellipsis(kwargs))
     worker_name = app_name(apps[0])
