@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import argparse
 import logging
 import os
 import threading
@@ -19,9 +18,6 @@ from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 from django.conf import settings as django_settings
 from django.contrib.staticfiles.handlers import StaticFilesHandler
 from django.core.wsgi import get_wsgi_application
-
-from celery_root.config import get_settings
-from celery_root.core.logging.setup import configure_process_logging
 
 if TYPE_CHECKING:
     from wsgiref.types import WSGIApplication
@@ -81,22 +77,3 @@ def serve(host: str, port: int, *, shutdown_event: _EventLike | None = None) -> 
     finally:
         httpd.shutdown()
         httpd.server_close()
-
-
-def main() -> None:
-    """Entry point for running the dev server from the CLI."""
-    config = get_settings()
-    configure_process_logging(config, component="web")
-    frontend = config.frontend
-    parser = argparse.ArgumentParser(description="Run the Celery Root dev web server.")
-    parser.add_argument("--host", default=(frontend.host if frontend else "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=(frontend.port if frontend else 5555))
-    args = parser.parse_args()
-
-    logger = logging.getLogger(__name__)
-    logger.info("Starting dev server on %s:%s", args.host, args.port)
-    serve(args.host, args.port)
-
-
-if __name__ == "__main__":
-    main()

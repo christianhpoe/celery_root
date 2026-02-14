@@ -167,7 +167,3 @@ def celery_root(ctx: click.Context, host: str | None, port: int | None, *, debug
         _run_root(loaded_apps, config)
         return
     _run_root((app,), config)
-
-
-if __name__ == "__main__":
-    main()
