@@ -16,7 +16,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from multiprocessing import Event, Process
+from multiprocessing import AuthenticationError, Event, Process
 from multiprocessing.connection import Client, Listener
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -132,6 +132,8 @@ class DBManager(Process):
         set_settings(self._config)
         configure_process_logging(self._config, component="db_manager")
         self._logger.info("DBManager starting.")
+        self._logger.info("DBManager RPC socket path: %s", self._config.database.rpc_socket_path)
+        self._logger.info("DBManager RPC auth enabled: %s", bool(self._authkey))
         controller = _build_backend(self._config, self._controller_factory)
         controller.initialize()
         controller.ensure_schema()
@@ -169,6 +171,9 @@ class DBManager(Process):
             while not self._stop_event.is_set():
                 try:
                     conn = listener.accept()
+                except AuthenticationError:
+                    self._logger.warning("DBManager rejected RPC connection (auth failed).")
+                    continue
                 except OSError:
                     break
                 threading.Thread(

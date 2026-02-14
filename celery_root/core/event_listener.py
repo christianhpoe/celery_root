@@ -99,6 +99,15 @@ class EventListener(Process):
             configure_process_logging(component=component)
         self._logger.info("EventListener starting for %s", self.broker_url)
         if self._config is not None:
+            self._logger.info(
+                "EventListener DB RPC socket path: %s",
+                self._config.database.rpc_socket_path,
+            )
+            self._logger.info(
+                "EventListener DB RPC auth enabled: %s",
+                bool(self._config.database.rpc_auth_key),
+            )
+        if self._config is not None:
             self._db_client = DbRpcClient.from_config(self._config, client_name=component)
         app = Celery(broker=self.broker_url)
         last_heartbeat = time.monotonic()

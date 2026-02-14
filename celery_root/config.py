@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-import os
+import hashlib
 import secrets
 import tempfile
 from dataclasses import dataclass
@@ -21,8 +21,9 @@ MAX_PORT = 65_535
 
 
 def _default_rpc_socket_path() -> Path:
-    token = secrets.token_hex(8)
-    return Path(tempfile.gettempdir()) / f"celery_root_{os.getpid()}_{token}.sock"
+    root = Path.cwd().resolve()
+    digest = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:8]
+    return Path(tempfile.gettempdir()) / f"celery_root_{digest}.sock"
 
 
 class LoggingConfigFile(BaseModel):
@@ -59,7 +60,7 @@ class DatabaseConfigBase(BaseModel):
 
     rpc_host: str = "127.0.0.1"
     rpc_port: int = Field(default=8765, ge=1, le=MAX_PORT)
-    rpc_auth_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    rpc_auth_key: str = ""
     rpc_socket_path: Path = Field(default_factory=_default_rpc_socket_path)
     rpc_max_message_bytes: int = Field(default=4_194_304, gt=0)
     rpc_max_inflight: int = Field(default=64, gt=0)

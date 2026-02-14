@@ -76,6 +76,8 @@ class _WebServerProcess(Process):
         configure_process_logging(self._root_config, component="web")
         logger = logging.getLogger(__name__)
         logger.info("Web server starting on %s:%s", self._host, self._port)
+        logger.info("Web server DB RPC socket path: %s", self._root_config.database.rpc_socket_path)
+        logger.info("Web server DB RPC auth enabled: %s", bool(self._root_config.database.rpc_auth_key))
 
         def _heartbeat() -> None:
             while True:
@@ -181,6 +183,8 @@ class _McpServerProcess(Process):
         configure_process_logging(self._config, component="mcp")
         logger = logging.getLogger(__name__)
         logger.info("MCP server starting on %s:%s", self._host, self._port)
+        logger.info("MCP server DB RPC socket path: %s", self._config.database.rpc_socket_path)
+        logger.info("MCP server DB RPC auth enabled: %s", bool(self._config.database.rpc_auth_key))
         app = create_asgi_app()
         server_config = UvicornConfig(
             app=app,
@@ -244,6 +248,8 @@ class ProcessManager:
         set_settings(self._config)
         configure_process_logging(self._config, component="process_manager")
         self._logger.info("ProcessManager starting.")
+        self._logger.info("DB RPC socket path: %s", self._config.database.rpc_socket_path)
+        self._logger.info("DB RPC auth enabled: %s", bool(self._config.database.rpc_auth_key))
         self.start()
         last_heartbeat = time.monotonic()
         try:

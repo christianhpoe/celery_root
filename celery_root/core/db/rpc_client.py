@@ -120,6 +120,7 @@ class _RpcTransport:
     def connect(self) -> None:
         if self._connection is not None:
             return
+        _LOGGER.debug("RPC connecting to %s", self._settings.address)
         self._connection = Client(self._settings.address, authkey=self._settings.authkey)
 
     def close(self) -> None:
@@ -193,11 +194,12 @@ class _RpcTransport:
                     raise RuntimeError(msg)
             except (OSError, EOFError, ValidationError) as exc:  # pragma: no cover - network dependent
                 last_error = exc
+                _LOGGER.debug("RPC request failed to %s: %s", self._settings.address, exc)
                 self.close()
                 continue
             else:
                 return response
-        msg = "RPC request failed"
+        msg = f"RPC request failed (address={self._settings.address})"
         raise RuntimeError(msg) from last_error
 
 
