@@ -44,7 +44,7 @@ from demo.worker_math import (
 from demo.worker_sleep import (
     app as sleep_app,  # noqa: F401
 )
-from demo.worker_sleep import sleep_then_hello, sleep_until
+from demo.worker_sleep import sleep_fail_randomly, sleep_retry_randomly, sleep_then_hello, sleep_until
 from demo.worker_text import (
     app as text_app,
 )
@@ -186,6 +186,12 @@ def seed_sleep_tasks() -> None:
     """Dispatch sleep demo tasks."""
     for _ in range(5):
         sleep_then_hello.s().apply_async()
+
+    for _ in range(5):
+        sleep_fail_randomly.s().apply_async()
+
+    for _ in range(5):
+        sleep_retry_randomly.s().apply_async()
 
     now = time.time()
     sleep_until.delay(target_timestamp=now + 100)

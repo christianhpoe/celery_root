@@ -74,6 +74,8 @@ _SORT_DIRECTIONS = ("asc", "desc")
 _STATS_SORT_FIELDS: dict[str, str] = {
     "name": "Task",
     "count": "Count",
+    "failure_rate": "Failure rate",
+    "retry_rate": "Retry rate",
     "avg": "Avg runtime",
     "p95": "P95",
     "p99": "P99",
@@ -821,15 +823,25 @@ def _percentile(values: list[float], pct: float) -> float | None:
 
 def _build_stats_rows(tasks: Sequence[Task]) -> list[dict[str, object]]:
     counts: dict[str, int] = {}
+    failures: dict[str, int] = {}
+    retries: dict[str, int] = {}
     runtimes: dict[str, list[float]] = {}
     for task in tasks:
         name = task.name or "unknown"
         counts[name] = counts.get(name, 0) + 1
+        if task.state == "FAILURE":
+            failures[name] = failures.get(name, 0) + 1
+        if task.state == "RETRY":
+            retries[name] = retries.get(name, 0) + 1
         if task.runtime is not None:
             runtimes.setdefault(name, []).append(float(task.runtime))
 
     rows: list[dict[str, object]] = []
     for name, count in counts.items():
+        failure_count = failures.get(name, 0)
+        failure_rate = (failure_count / count) * 100.0 if count else None
+        retry_count = retries.get(name, 0)
+        retry_rate = (retry_count / count) * 100.0 if count else None
         values = sorted(runtimes.get(name, []))
         if values:
             min_runtime = values[0]
@@ -847,6 +859,8 @@ def _build_stats_rows(tasks: Sequence[Task]) -> list[dict[str, object]]:
             {
                 "name": name,
                 "count": count,
+                "failure_rate": failure_rate,
+                "retry_rate": retry_rate,
                 "min": min_runtime,
                 "max": max_runtime,
                 "avg": avg_runtime,

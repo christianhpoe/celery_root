@@ -151,6 +151,8 @@ SPDX-License-Identifier: BSD-3-Clause
           <h3>Scrape Endpoint</h3>
           <p class="detail-runtime">Path: {{ prometheus_component.config.path }}</p>
           <p class="detail-runtime">Port: {{ prometheus_component.config.port }}</p>
+          <p class="detail-runtime">Scrape config example:</p>
+          <pre class="detail-runtime"><code>{{ prometheus_scrape_snippet }}</code></pre>
           {% if prometheus_component.url %}
             <p>
               <a class="btn" href="{{ prometheus_component.url }}" target="_blank" rel="noreferrer noopener">Open /metrics</a>

@@ -323,6 +323,20 @@ SPDX-License-Identifier: BSD-3-Clause
                   </a>
                 </th>
               {% endwith %}
+              {% with header=stats.sort_headers.failure_rate %}
+                <th{% if header.active %} aria-sort="{% if header.direction == 'asc' %}ascending{% else %}descending{% endif %}"{% endif %}>
+                  <a class="table-sort{% if header.active %} is-active{% endif %}{% if header.direction == 'desc' %} is-desc{% endif %}" href="{{ header.url }}#tab-stats">
+                    {{ header.label }}
+                  </a>
+                </th>
+              {% endwith %}
+              {% with header=stats.sort_headers.retry_rate %}
+                <th{% if header.active %} aria-sort="{% if header.direction == 'asc' %}ascending{% else %}descending{% endif %}"{% endif %}>
+                  <a class="table-sort{% if header.active %} is-active{% endif %}{% if header.direction == 'desc' %} is-desc{% endif %}" href="{{ header.url }}#tab-stats">
+                    {{ header.label }}
+                  </a>
+                </th>
+              {% endwith %}
               {% with header=stats.sort_headers.avg %}
                 <th{% if header.active %} aria-sort="{% if header.direction == 'asc' %}ascending{% else %}descending{% endif %}"{% endif %}>
                   <a class="table-sort{% if header.active %} is-active{% endif %}{% if header.direction == 'desc' %} is-desc{% endif %}" href="{{ header.url }}#tab-stats">
@@ -366,6 +380,8 @@ SPDX-License-Identifier: BSD-3-Clause
               <tr>
                 <td><strong>{{ row.name }}</strong></td>
                 <td>{{ row.count }}</td>
+                <td>{% if row.failure_rate is not None %}{{ row.failure_rate|floatformat:1 }}%{% else %}—{% endif %}</td>
+                <td>{% if row.retry_rate is not None %}{{ row.retry_rate|floatformat:1 }}%{% else %}—{% endif %}</td>
                 <td>{% if row.avg is not None %}{{ row.avg|floatformat:3 }}s{% else %}—{% endif %}</td>
                 <td>{% if row.p95 is not None %}{{ row.p95|floatformat:3 }}s{% else %}—{% endif %}</td>
                 <td>{% if row.p99 is not None %}{{ row.p99|floatformat:3 }}s{% else %}—{% endif %}</td>
@@ -377,7 +393,7 @@ SPDX-License-Identifier: BSD-3-Clause
               </tr>
             {% empty %}
               <tr>
-                <td colspan="8">No tasks matched your search.</td>
+                <td colspan="10">No tasks matched your search.</td>
               </tr>
             {% endfor %}
           </tbody>
