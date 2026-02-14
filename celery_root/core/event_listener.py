@@ -27,7 +27,9 @@ from celery_root.core.logging.setup import configure_process_logging
 from celery_root.core.logging.utils import sanitize_component
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+
+    from kombu.connection import Connection
 
     from celery_root.config import CeleryRootConfig
 
@@ -44,6 +46,24 @@ _TASK_STATE_MAP = {
 
 _ENABLE_EVENTS_INTERVAL = 30.0
 _HEARTBEAT_INTERVAL = 60.0
+
+
+class _ManagedEventReceiver(EventReceiver):
+    """Event receiver that delegates per-iteration bookkeeping."""
+
+    def __init__(
+        self,
+        channel: Connection,
+        *,
+        handlers: dict[str, object],
+        app: Celery,
+        on_iteration: Callable[[], None],
+    ) -> None:
+        super().__init__(channel, handlers=handlers, app=app)
+        self._on_iteration = on_iteration
+
+    def on_iteration(self) -> None:
+        self._on_iteration()
 
 
 class EventListener(Process):
@@ -101,21 +121,27 @@ class EventListener(Process):
         with app.connection() as connection:
             self._logger.info("EventListener connected to %s", self.broker_url)
             last_enable = 0.0
-            receiver = EventReceiver(
+            last_heartbeat_box = [last_heartbeat]
+            last_enable_box = [last_enable]
+
+            def _on_iteration() -> None:
+                now = time.monotonic()
+                last_heartbeat_box[0] = self._maybe_log_heartbeat(now, last_heartbeat_box[0])
+                last_enable_box[0] = self._maybe_enable_events(app, last_enable_box[0])
+                if self._stop_event.is_set():
+                    receiver.should_stop = True
+
+            receiver = _ManagedEventReceiver(
                 connection,
                 handlers={"*": self._handle_event},
                 app=app,
+                on_iteration=_on_iteration,
             )
             try:
-                while not self._stop_event.is_set():
-                    now = time.monotonic()
-                    last_heartbeat = self._maybe_log_heartbeat(now, last_heartbeat)
-                    last_enable = self._maybe_enable_events(app, last_enable)
-                    if not self._capture_once(receiver):
-                        break
+                receiver.capture(limit=None, timeout=None, wakeup=True)
             finally:
                 self._logger.info("EventListener disconnected from %s", self.broker_url)
-        return last_heartbeat
+        return last_heartbeat_box[0]
 
     def _maybe_log_heartbeat(self, now: float, last_heartbeat: float) -> float:
         if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
@@ -135,16 +161,6 @@ class EventListener(Process):
             now = time.monotonic()
             self._logger.info("Enabled events for workers on %s", self.broker_url)
             return now
-
-    def _capture_once(self, receiver: EventReceiver) -> bool:
-        try:
-            receiver.capture(limit=None, timeout=1.0, wakeup=True)
-        except TimeoutError:
-            return True
-        except KeyboardInterrupt:
-            self._stop_event.set()
-            return False
-        return True
 
     def _handle_event(self, event: dict[str, object]) -> None:
         event_type = str(event.get("type", ""))

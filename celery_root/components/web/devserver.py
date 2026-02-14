@@ -32,6 +32,21 @@ class _ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
     daemon_threads = True
 
 
+class _LoggingWSGIRequestHandler(WSGIRequestHandler):
+    """Request handler that forwards access logs to the app logger."""
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        """Emit access logs through the logging system."""
+        logger = logging.getLogger("celery_root.web.access")
+        message = fmt % args
+        logger.info(
+            "%s - - [%s] %s",
+            self.client_address[0],
+            self.log_date_time_string(),
+            message,
+        )
+
+
 def _build_wsgi_app() -> WSGIApplication:
     application = get_wsgi_application()
     if django_settings.DEBUG:
@@ -57,7 +72,7 @@ def serve(host: str, port: int, *, shutdown_event: _EventLike | None = None) -> 
         port,
         application,
         server_class=_ThreadedWSGIServer,
-        handler_class=WSGIRequestHandler,
+        handler_class=_LoggingWSGIRequestHandler,
     )
     logger = logging.getLogger(__name__)
     print(  # noqa: T201

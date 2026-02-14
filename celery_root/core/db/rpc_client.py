@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -81,6 +82,8 @@ if TYPE_CHECKING:
 ReqT = TypeVar("ReqT", bound=BaseModel)
 ResT = TypeVar("ResT", bound=BaseModel)
 
+_LOGGER = logging.getLogger(__name__)
+
 
 class RpcCallError(RuntimeError):
     """Raised when the RPC response indicates an error."""
@@ -142,6 +145,14 @@ class _RpcTransport:
             client=self._client_name,
         )
         data = envelope.model_dump_json().encode("utf-8")
+        _LOGGER.debug(
+            "RPC request start op=%s request_id=%s bytes=%d timeout=%.2f retries=%d",
+            op,
+            request_id,
+            len(data),
+            timeout_seconds or self._settings.timeout_seconds,
+            max_retries,
+        )
         if len(data) > self._settings.max_message_bytes:
             msg = f"RPC request too large ({len(data)} bytes)"
             raise ValueError(msg)
@@ -167,6 +178,13 @@ class _RpcTransport:
                     msg = f"RPC response too large ({len(resp_bytes)} bytes)"
                     raise ValueError(msg)
                 response = RpcResponseEnvelope.model_validate_json(resp_bytes)
+                _LOGGER.debug(
+                    "RPC response recv op=%s request_id=%s ok=%s bytes=%d",
+                    op,
+                    response.request_id,
+                    response.ok,
+                    len(resp_bytes),
+                )
                 if response.schema_version != envelope.schema_version:
                     msg = "RPC schema version mismatch"
                     raise RuntimeError(msg)
@@ -378,6 +396,12 @@ class DbRpcClient(BaseDBController):
         )
         if not response.ok:
             error = response.error or RpcError(code="UNKNOWN", message="RPC failed")
+            _LOGGER.debug(
+                "RPC call error op=%s code=%s message=%s",
+                op,
+                error.code,
+                error.message,
+            )
             raise RpcCallError(error)
         if response.payload is None:
             return response_model()

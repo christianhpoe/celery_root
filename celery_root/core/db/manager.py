@@ -183,6 +183,13 @@ class DBManager(Process):
             envelope = RpcRequestEnvelope.model_validate_json(data)
             request_id = envelope.request_id
             op = envelope.op
+            self._logger.debug(
+                "DB RPC recv request_id=%s op=%s client=%s bytes=%d",
+                request_id,
+                op,
+                envelope.client,
+                len(data),
+            )
             if envelope.schema_version != RPC_SCHEMA_VERSION:
                 return self._error_response(
                     request_id=request_id,
@@ -203,6 +210,13 @@ class DBManager(Process):
                 payload=response_payload,
                 timestamp=datetime.now(UTC),
             )
+            response_bytes = response.model_dump_json().encode("utf-8")
+            self._logger.debug(
+                "DB RPC ok request_id=%s op=%s payload_bytes=%s",
+                request_id,
+                op,
+                len(response_bytes),
+            )
             duration_ms = (time.monotonic() - start) * 1000.0
             self._logger.info(
                 "DB RPC %s %s ok duration_ms=%.1f",
@@ -210,7 +224,6 @@ class DBManager(Process):
                 op,
                 duration_ms,
             )
-            return response.model_dump_json().encode("utf-8")
         except ValidationError as exc:
             duration_ms = (time.monotonic() - start) * 1000.0
             context = _ErrorContext(request_id=request_id, op=op, duration_ms=duration_ms)
@@ -219,6 +232,8 @@ class DBManager(Process):
             duration_ms = (time.monotonic() - start) * 1000.0
             context = _ErrorContext(request_id=request_id, op=op, duration_ms=duration_ms)
             return self._handle_error(context, "SERVER_ERROR", "RPC handler failed", exc)
+        else:
+            return response_bytes
 
     def _handle_operation(
         self,
