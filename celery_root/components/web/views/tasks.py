@@ -1127,6 +1127,9 @@ def _parent_id(task: Task, relations: Sequence[TaskRelation]) -> str | None:
     for relation in relations:
         if relation.child_id == task.task_id and relation.parent_id:
             return relation.parent_id
+    for relation in relations:
+        if relation.parent_id == task.task_id:
+            return relation.parent_id
     return None
 
 

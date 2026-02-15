@@ -81,7 +81,7 @@ class DummyApp:
 
 def make_registry(app: DummyApp) -> WorkerRegistry:
     registry = WorkerRegistry()
-    registry._apps["dummy"] = cast("Celery", app)  # noqa: SLF001
+    registry._apps["dummy"] = cast("Celery", app)
     return registry
 
 

@@ -9,8 +9,10 @@ from __future__ import annotations
 import os
 import secrets
 import socket
+import tempfile
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import django
@@ -36,7 +38,6 @@ from tests.fixtures.app_two import app as app_two
 
 if TYPE_CHECKING:
     from collections.abc import Generator
-    from pathlib import Path
 
     from celery import Celery
 
@@ -82,10 +83,16 @@ def web_client(tmp_path_factory: pytest.TempPathFactory) -> Generator[Client, No
     reset_settings()
     rpc_port = _free_port()
     rpc_auth_key = secrets.token_urlsafe(32)
+    rpc_socket_path = Path(tempfile.gettempdir()) / f"celery_root_{secrets.token_hex(4)}.sock"
     set_settings(
         CeleryRootConfig(
             logging=LoggingConfigFile(log_dir=log_dir),
-            database=DatabaseConfigSqlite(db_path=db_path, rpc_port=rpc_port, rpc_auth_key=rpc_auth_key),
+            database=DatabaseConfigSqlite(
+                db_path=db_path,
+                rpc_port=rpc_port,
+                rpc_auth_key=rpc_auth_key,
+                rpc_socket_path=rpc_socket_path,
+            ),
             beat=BeatConfig(),
             frontend=FrontendConfig(secret_key=secrets.token_urlsafe(32), debug=False),
         ),

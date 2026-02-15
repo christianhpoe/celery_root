@@ -128,7 +128,7 @@ class DummyApp:
 
 def make_registry(app: DummyApp) -> WorkerRegistry:
     registry = WorkerRegistry()
-    registry._apps["dummy"] = cast("Celery", app)  # noqa: SLF001
+    registry._apps["dummy"] = cast("Celery", app)
     return registry
 
 
@@ -183,7 +183,7 @@ def test_smart_retry_resends_descendants_in_order() -> None:
         called.append((name, tuple(args or ()), dict(kwargs or {})))
         return name
 
-    results = retry.smart_retry(registry, db, "a", sender=cast("retry._TaskSender", sender))  # noqa: SLF001
+    results = retry.smart_retry(registry, db, "a", sender=cast("retry._TaskSender", sender))
 
     assert results == ["t1", "t2", "t3"]
     assert called == [

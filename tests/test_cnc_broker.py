@@ -58,7 +58,7 @@ class DummyRedisConnection:
     default_channel: object | None
 
     def __init__(self, client: DummyRedisClient) -> None:
-        self.transport = cast("broker._Transport", DummyRedisTransport())  # noqa: SLF001
+        self.transport = cast("broker._Transport", DummyRedisTransport())
         self.default_channel = DummyRedisChannel(client)
 
     def channel(self) -> DummyRedisChannel:
@@ -90,7 +90,7 @@ class DummyApp:
 
 def make_registry(app: DummyApp) -> WorkerRegistry:
     registry = WorkerRegistry()
-    registry._apps["dummy"] = cast("Celery", app)  # noqa: SLF001
+    registry._apps["dummy"] = cast("Celery", app)
     return registry
 
 

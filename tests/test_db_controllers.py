@@ -168,7 +168,7 @@ def test_broker_queue_events(controller: BaseDBController) -> None:
         ),
     )
     sqlite_controller = cast("SQLiteController", controller)
-    with sqlite_controller._engine.begin() as conn:  # noqa: SLF001
+    with sqlite_controller._engine.begin() as conn:
         count = conn.execute(text("select count(*) from broker_queue_events")).scalar_one()
     assert int(count or 0) == 1
     snapshot = controller.get_broker_queue_snapshot("redis://localhost:6379/0")
