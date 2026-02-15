@@ -96,6 +96,11 @@ def test_encode_decode_and_labels() -> None:
     assert broker_views.broker_type_label("redis://localhost:6379/0") == "Redis"
 
 
+def test_encode_redacts_passwords() -> None:
+    encoded = broker_views.encode_broker_key("amqp://user:secret@localhost:5672//")
+    assert broker_views._decode_broker_key(encoded) == "amqp://user:***@localhost:5672//"
+
+
 def test_list_broker_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _DummyApp("app", "redis://", "redis://backend")
     group = _DummyGroup("redis://", [app])

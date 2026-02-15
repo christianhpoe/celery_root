@@ -17,6 +17,7 @@ from django.utils import timezone
 
 from celery_root.components.web.services import get_registry, open_db
 from celery_root.core.db.models import TaskFilter, TimeRange
+from celery_root.shared.redaction import redact_url_password
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -238,7 +239,8 @@ def _compute_metrics(now: datetime) -> _SummaryMetrics:
         broker_groups = registry.get_brokers()
         pending_tasks = 0
         for broker_url in broker_groups:
-            snapshots = db.get_broker_queue_snapshot(broker_url)
+            redacted_broker_url = redact_url_password(broker_url) or broker_url
+            snapshots = db.get_broker_queue_snapshot(redacted_broker_url)
             pending_tasks += sum(event.messages or 0 for event in snapshots)
 
     return _SummaryMetrics(

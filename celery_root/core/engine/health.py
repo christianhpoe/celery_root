@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, cast
 
+from celery_root.shared.redaction import redact_url_password
+
 if TYPE_CHECKING:
     from celery import Celery
 
@@ -52,7 +54,8 @@ def _check_broker(app: Celery, *, connection: _Connection | None) -> dict[str, o
             with app.connection_or_acquire() as conn:
                 cast("_Connection", conn).connect()
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:  # pragma: no cover
-        return {"ok": False, "error": str(exc)}
+        error = redact_url_password(str(exc)) or str(exc)
+        return {"ok": False, "error": error}
     else:
         return {"ok": True, "error": None}
 
@@ -65,7 +68,8 @@ def _check_backend(app: Celery) -> dict[str, object]:
     try:
         get_task_meta("celery_root_healthcheck")
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:  # pragma: no cover
-        return {"ok": False, "error": str(exc)}
+        error = redact_url_password(str(exc)) or str(exc)
+        return {"ok": False, "error": error}
     return {"ok": True, "error": None}
 
 
@@ -74,6 +78,7 @@ def _check_workers(app: Celery, *, timeout: float) -> dict[str, object]:
         responses = app.control.ping(timeout=timeout) or []
         responding = [next(iter(item)) for item in responses if isinstance(item, dict) and item]
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:  # pragma: no cover
-        return {"ok": False, "responding": [], "error": str(exc)}
+        error = redact_url_password(str(exc)) or str(exc)
+        return {"ok": False, "responding": [], "error": error}
     else:
         return {"ok": bool(responding), "responding": responding, "error": None}

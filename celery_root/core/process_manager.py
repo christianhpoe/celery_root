@@ -24,6 +24,7 @@ from celery_root.core.component_status import ComponentStatusStore, build_status
 from celery_root.core.db.manager import DBManager
 from celery_root.core.logging.setup import configure_process_logging
 from celery_root.optional import require_optional_scope
+from celery_root.shared.redaction import redact_url_password
 
 from .event_listener import EventListener
 from .reconciler import Reconciler
@@ -347,8 +348,12 @@ class ProcessManager:
         backend_map: dict[str, str] = {}
         broker_groups = self._registry.get_brokers()
         for broker_url, group in broker_groups.items():
+            redacted_broker_url = redact_url_password(broker_url) or broker_url
             backends = {str(app.conf.result_backend) if app.conf.result_backend else "" for app in group.apps}
-            backend_map[broker_url] = next(iter(backends)) if len(backends) == 1 else "multiple"
+            backend_label = next(iter(backends)) if len(backends) == 1 else "multiple"
+            if backend_label and backend_label != "multiple":
+                backend_label = redact_url_password(backend_label) or backend_label
+            backend_map[redacted_broker_url] = backend_label
         if self._config.prometheus is not None:
             require_optional_scope("prometheus")
             from celery_root.components.metrics.prometheus import PrometheusExporter  # noqa: PLC0415
@@ -388,8 +393,14 @@ class ProcessManager:
                 None,
                 otel_queue,
             )
+        listener_counts: dict[str, int] = {}
         for broker_url in broker_groups:
-            name = f"event_listener:{broker_url}"
+            redacted_broker_url = redact_url_password(broker_url) or broker_url
+            display_url = redacted_broker_url or "default"
+            count = listener_counts.get(display_url, 0) + 1
+            listener_counts[display_url] = count
+            suffix = f"#{count}" if count > 1 else ""
+            name = f"event_listener:{display_url}{suffix}"
             self._process_factories[name] = functools.partial(
                 EventListener,
                 broker_url,

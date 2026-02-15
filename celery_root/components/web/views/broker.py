@@ -18,6 +18,7 @@ from django.shortcuts import redirect, render
 
 from celery_root.components.web.services import app_name, get_registry, open_db
 from celery_root.core.engine.brokers import purge_queues
+from celery_root.shared.redaction import redact_url_password
 
 from .decorators import require_post
 
@@ -89,6 +90,7 @@ class BrokerGroupRow:
 
 
 def _encode_broker_key(broker_url: str) -> str:
+    broker_url = _redact_broker_url(broker_url)
     if not broker_url:
         return _DEFAULT_BROKER_KEY
     encoded = base64.urlsafe_b64encode(broker_url.encode("utf-8")).decode("ascii")
@@ -116,6 +118,18 @@ def _broker_type(broker_url: str) -> str:
 def _broker_type_label(broker_url: str) -> str:
     broker_type = _broker_type(broker_url)
     return _BROKER_TYPE_LABELS.get(broker_type, broker_type.upper())
+
+
+def _redact_broker_url(broker_url: str) -> str:
+    return redact_url_password(broker_url) or broker_url
+
+
+def _redacted_broker_groups(registry: WorkerRegistry) -> dict[str, list[Celery]]:
+    groups: dict[str, list[Celery]] = {}
+    for raw_url, group in registry.get_brokers().items():
+        redacted_url = _redact_broker_url(raw_url)
+        groups.setdefault(redacted_url, []).extend(list(group.apps))
+    return groups
 
 
 def encode_broker_key(broker_url: str) -> str:
@@ -173,6 +187,8 @@ def _backend_labels(apps: Sequence[Celery]) -> list[str]:
     for app in apps:
         backend = app.conf.result_backend
         label = str(backend) if backend else "disabled"
+        if label and label != "disabled":
+            label = redact_url_password(label) or label
         if label not in labels:
             labels.append(label)
     return labels or ["disabled"]
@@ -232,17 +248,17 @@ def list_broker_groups(*, include_counts: bool = True) -> list[BrokerGroupRow]:
     """Return broker groupings for the overview tree."""
     _ = include_counts
     registry = get_registry()
-    broker_groups = registry.get_brokers()
+    broker_groups = _redacted_broker_groups(registry)
     if not broker_groups:
         return []
     groups: list[BrokerGroupRow] = []
     with open_db() as db:
         workers = db.get_workers()
-        for broker_url, group in sorted(broker_groups.items(), key=lambda item: item[0]):
-            apps = list(group.apps)
-            if not apps:
+        for broker_url, apps in sorted(broker_groups.items(), key=lambda item: item[0]):
+            apps_list = list(apps)
+            if not apps_list:
                 continue
-            app_names = [app_name(app) for app in apps]
+            app_names = [app_name(app) for app in apps_list]
             queues, _latest = _queue_rows_from_db(db, broker_url)
             attached_workers = _resolve_broker_workers(broker_url, queues, workers)
             groups.append(
@@ -252,7 +268,7 @@ def list_broker_groups(*, include_counts: bool = True) -> list[BrokerGroupRow]:
                     broker_key=_encode_broker_key(broker_url),
                     broker_type=_broker_type(broker_url),
                     broker_type_label=_broker_type_label(broker_url),
-                    backend_labels=_backend_labels(apps),
+                    backend_labels=_backend_labels(apps_list),
                     app_names=app_names,
                     primary_app=app_names[0],
                     queues=queues,
@@ -287,11 +303,11 @@ def broker_detail(request: HttpRequest, broker_key: str) -> HttpResponse:
     broker_url = _decode_broker_key(broker_key)
     if broker_url is None:
         raise Http404(_UNKNOWN_BROKER_MESSAGE)
-    broker_groups = registry.get_brokers()
-    group = broker_groups.get(broker_url)
-    if group is None:
+    broker_groups = _redacted_broker_groups(registry)
+    apps = broker_groups.get(broker_url)
+    if apps is None:
         raise Http404(_UNKNOWN_BROKER_MESSAGE)
-    apps = list(group.apps)
+    apps = list(apps)
     app_names = [app_name(app) for app in apps]
     with open_db() as db:
         workers = db.get_workers()
@@ -355,7 +371,7 @@ def broker_purge_idle(_request: HttpRequest) -> HttpResponse:
         app = registry.get_app(worker_name)
     except KeyError:
         return HttpResponseBadRequest("Unknown Celery app")
-    broker_url = str(app.conf.broker_url or "")
+    broker_url = _redact_broker_url(str(app.conf.broker_url or ""))
     with open_db() as db:
         snapshots = db.get_broker_queue_snapshot(broker_url)
     if not snapshots:

@@ -23,6 +23,7 @@ from celery_root.core.db.rpc_client import DbRpcClient, RpcCallError
 from celery_root.core.engine.brokers import list_queues
 from celery_root.core.logging.setup import configure_process_logging
 from celery_root.core.registry import WorkerRegistry
+from celery_root.shared.redaction import redact_access_data, redact_url_password
 
 if TYPE_CHECKING:
     from celery import Celery
@@ -262,12 +263,13 @@ class Reconciler(Process):
         if stats is None and conf is None and queues is None and registered is None and active is None:
             return None
         info = self._build_worker_info(snapshot)
+        redacted_broker_url = redact_url_password(broker_url) if broker_url is not None else None
         return WorkerEvent(
             hostname=hostname,
             event="worker-snapshot",
             timestamp=datetime.now(UTC),
             info=info,
-            broker_url=broker_url,
+            broker_url=redacted_broker_url,
         )
 
     def _build_worker_info(
@@ -294,7 +296,10 @@ class Reconciler(Process):
             info["active"] = active
         if app_name is not None:
             info["app"] = app_name
-        return _json_safe(info)
+        redacted = redact_access_data(info)
+        if isinstance(redacted, dict):
+            return _json_safe(redacted)
+        return _json_safe({"value": redacted})
 
     def _active_count(self, active: object) -> int | None:
         if isinstance(active, Sequence) and not isinstance(active, str | bytes):
@@ -385,6 +390,7 @@ class Reconciler(Process):
             app = None
         if app is not None:
             broker_url = str(app.conf.broker_url or "")
+        redacted_broker_url = redact_url_password(broker_url) if broker_url else broker_url
         try:
             queues = list_queues(registry, app_name)
         except Exception:  # pragma: no cover - broker dependent
@@ -397,7 +403,7 @@ class Reconciler(Process):
         timestamp = datetime.now(UTC)
         for queue in queues:
             event = BrokerQueueEvent(
-                broker_url=broker_url,
+                broker_url=redacted_broker_url,
                 queue=queue.name,
                 messages=queue.messages,
                 consumers=queue.consumers,

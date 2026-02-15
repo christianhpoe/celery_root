@@ -27,6 +27,7 @@ from celery_root.core.db.rpc_client import DbRpcClient, RpcCallError
 from celery_root.core.logging.setup import configure_process_logging
 from celery_root.core.logging.utils import sanitize_component
 from celery_root.core.registry import WorkerRegistry
+from celery_root.shared.redaction import redact_access_data, redact_url_password
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -63,6 +64,13 @@ _BROKER_KEYS = (
 )
 
 
+def _redact_broker_url(value: str | None) -> str:
+    if value is None:
+        return ""
+    redacted = redact_url_password(str(value))
+    return redacted if redacted is not None else ""
+
+
 def _load_worker_apps(
     config: CeleryRootConfig,
     broker_url: str,
@@ -77,7 +85,10 @@ def _load_worker_apps(
         return ()
     group = registry.get_brokers().get(broker_url)
     if group is None:
-        logger.warning("No worker apps found for broker %s; using defaults.", broker_url)
+        logger.warning(
+            "No worker apps found for broker %s; using defaults.",
+            _redact_broker_url(broker_url),
+        )
         return ()
     return tuple(group.apps)
 
@@ -115,8 +126,8 @@ def _select_event_app(
     if broker_url and str(primary.conf.broker_url or "") != broker_url:
         logger.warning(
             "EventListener overriding worker app broker_url (%s) with %s.",
-            primary.conf.broker_url,
-            broker_url,
+            _redact_broker_url(str(primary.conf.broker_url or "")),
+            _redact_broker_url(broker_url),
         )
         primary.conf.broker_url = broker_url
     return primary, apps
@@ -162,7 +173,11 @@ def _apply_setting(app: Celery, apps: Sequence[Celery], key: str, logger: loggin
         return
     app.conf[key] = value
     if conflict:
-        logger.warning("EventListener using %s=%r from primary worker app; workers disagree.", key, value)
+        logger.warning(
+            "EventListener using %s=%r from primary worker app; workers disagree.",
+            key,
+            redact_access_data(value),
+        )
 
 
 def _configure_from_workers(
@@ -212,6 +227,7 @@ class EventListener(Process):
         """Create an event listener for a broker URL."""
         super().__init__(daemon=True)
         self.broker_url = broker_url
+        self._broker_url_redacted = _redact_broker_url(broker_url)
         self._metrics_queues = list(metrics_queues or [])
         self._config = config
         self._stop_event = Event()
@@ -224,13 +240,13 @@ class EventListener(Process):
 
     def run(self) -> None:
         """Listen for events and forward them to the DB manager and metrics queues."""
-        component = f"event_listener-{sanitize_component(self.broker_url)}"
+        component = f"event_listener-{sanitize_component(self._broker_url_redacted)}"
         if self._config is not None:
             set_settings(self._config)
             configure_process_logging(self._config, component=component)
         else:
             configure_process_logging(component=component)
-        self._logger.info("EventListener starting for %s", self.broker_url)
+        self._logger.info("EventListener starting for %s", self._broker_url_redacted)
         if self._config is not None:
             self._logger.info(
                 "EventListener DB RPC socket path: %s",
@@ -254,21 +270,21 @@ class EventListener(Process):
             try:
                 last_heartbeat = self._listen(app, last_heartbeat)
             except (OperationalError, OSError) as exc:
-                self._logger.warning("EventListener reconnecting to %s: %s", self.broker_url, exc)
+                self._logger.warning("EventListener reconnecting to %s: %s", self._broker_url_redacted, exc)
                 time.sleep(1.0)
             except KeyboardInterrupt:
-                self._logger.info("EventListener interrupted for %s; stopping.", self.broker_url)
+                self._logger.info("EventListener interrupted for %s; stopping.", self._broker_url_redacted)
                 self._stop_event.set()
             except Exception:  # pragma: no cover - defensive
-                self._logger.exception("EventListener error for %s", self.broker_url)
+                self._logger.exception("EventListener error for %s", self._broker_url_redacted)
                 time.sleep(1.0)
-        self._logger.info("EventListener stopped for %s", self.broker_url)
+        self._logger.info("EventListener stopped for %s", self._broker_url_redacted)
         if self._db_client is not None:
             self._db_client.close()
 
     def _listen(self, app: Celery, last_heartbeat: float) -> float:
         with app.connection() as connection:
-            self._logger.info("EventListener connected to %s", self.broker_url)
+            self._logger.info("EventListener connected to %s", self._broker_url_redacted)
             last_enable = 0.0
             last_heartbeat_box = [last_heartbeat]
             last_enable_box = [last_enable]
@@ -298,7 +314,7 @@ class EventListener(Process):
 
     def _maybe_log_heartbeat(self, now: float, last_heartbeat: float) -> float:
         if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
-            self._logger.info("EventListener heartbeat for %s", self.broker_url)
+            self._logger.info("EventListener heartbeat for %s", self._broker_url_redacted)
             return now
         return last_heartbeat
 
@@ -308,17 +324,17 @@ class EventListener(Process):
         try:
             app.control.enable_events()
         except Exception:  # pragma: no cover - best effort to enable events  # noqa: BLE001
-            self._logger.debug("Failed to enable worker events for %s", self.broker_url)
+            self._logger.debug("Failed to enable worker events for %s", self._broker_url_redacted)
             return last_enable
         else:
             now = time.monotonic()
-            self._logger.info("Enabled events for workers on %s", self.broker_url)
+            self._logger.info("Enabled events for workers on %s", self._broker_url_redacted)
             return now
 
     def _handle_event(self, event: dict[str, object]) -> None:
         event_type = str(event.get("type", ""))
         if event_type:
-            self._logger.debug("Event received from %s: %s", self.broker_url, event_type)
+            self._logger.debug("Event received from %s: %s", self._broker_url_redacted, event_type)
         if event_type == "task-relation":
             self._handle_task_relation(event)
         elif event_type.startswith("task-"):
@@ -361,15 +377,16 @@ class EventListener(Process):
         if not hostname:
             return
         if event_type in {"worker-online", "worker-offline"}:
-            self._logger.info("Worker %s event from %s: %s", hostname, self.broker_url, event_type)
-        info = {key: value for key, value in event.items() if key not in {"type", "timestamp"}}
-        info = _json_safe(info)
+            self._logger.info("Worker %s event from %s: %s", hostname, self._broker_url_redacted, event_type)
+        raw_info = {key: value for key, value in event.items() if key not in {"type", "timestamp"}}
+        redacted_info = redact_access_data(raw_info)
+        info = _json_safe(redacted_info) if isinstance(redacted_info, dict) else _json_safe({"value": redacted_info})
         worker_event = WorkerEvent(
             hostname=str(hostname),
             event=event_type,
             timestamp=_event_received_timestamp(event),
             info=info,
-            broker_url=self.broker_url,
+            broker_url=self._broker_url_redacted,
         )
         self._emit(worker_event)
 

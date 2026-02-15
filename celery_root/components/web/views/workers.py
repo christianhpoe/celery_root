@@ -22,6 +22,7 @@ from celery_root.components.web.services import app_name, get_registry, list_wor
 from celery_root.components.web.views import broker as broker_views
 from celery_root.core.db.models import TaskFilter
 from celery_root.core.engine import workers as worker_control
+from celery_root.shared.redaction import redact_access_data, redact_url_password
 
 from .decorators import require_post
 
@@ -296,6 +297,15 @@ def _build_metadata_rows(
     conf: Mapping[str, object] | None,
 ) -> list[_MetaRow]:
     rows: list[_MetaRow] = []
+
+    if stats is not None:
+        redacted_stats = redact_access_data(stats)
+        if isinstance(redacted_stats, Mapping):
+            stats = redacted_stats
+    if conf is not None:
+        redacted_conf = redact_access_data(conf)
+        if isinstance(redacted_conf, Mapping):
+            conf = redacted_conf
 
     def add(label: str, value: object | None) -> None:
         if value is None:
@@ -600,7 +610,8 @@ def _resolve_broker_detail(
         app = registry.get_app(inspected_app_name)
     except KeyError:
         return [], None, None, None
-    broker_url = str(app.conf.broker_url or "")
+    raw_broker_url = str(app.conf.broker_url or "")
+    broker_url = redact_url_password(raw_broker_url) or raw_broker_url
     broker_queue_rows, _latest = broker_views.queue_rows_for_broker_snapshot(broker_url)
     broker_key = broker_views.encode_broker_key(broker_url)
     broker_label = broker_url or "default"
