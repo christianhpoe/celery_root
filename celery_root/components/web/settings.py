@@ -55,13 +55,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "celery_root.components.web.wsgi.application"
 ASGI_APPLICATION = "celery_root.components.web.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(BASE_DIR / "sqlite3.db"),
-    },
-}
-
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
@@ -72,8 +65,6 @@ STATICFILES_DIRS = [str(BASE_DIR / "static")]
 
 SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
 
-_DB_PATH = getattr(CONFIG.database, "db_path", None)
-CELERY_ROOT_DB_PATH = Path(_DB_PATH) if _DB_PATH is not None else Path("memory")
 CELERY_ROOT_LOG_DIR = Path(CONFIG.logging.log_dir)
 CELERY_ROOT_RETENTION_DAYS = int(getattr(CONFIG.database, "retention_days", 0))
 
