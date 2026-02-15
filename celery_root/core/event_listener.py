@@ -409,8 +409,8 @@ class EventListener(Process):
                 self._db_client.store_worker_event(item)
             elif isinstance(item, TaskRelation):
                 self._db_client.store_task_relation(item)
-        except (RpcCallError, RuntimeError) as exc:
-            self._logger.warning("DB RPC failed for %s: %s", type(item).__name__, exc)
+        except (RpcCallError, RuntimeError):
+            self._logger.exception("DB RPC failed for %s", type(item).__name__)
 
 
 def _event_timestamp(event: dict[str, object]) -> datetime:

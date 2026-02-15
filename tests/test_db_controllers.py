@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
+from sqlalchemy import text
 
 from celery_root.core.db.adapters.sqlite import SQLiteController
 from celery_root.core.db.models import (
+    BrokerQueueEvent,
     Schedule,
     TaskEvent,
     TaskFilter,
@@ -140,9 +142,37 @@ def test_workers(controller: BaseDBController) -> None:
     controller.store_worker_event(
         WorkerEvent(hostname="worker1", event="worker-online", timestamp=ts, info={"active": []}),
     )
+    controller.store_worker_event(
+        WorkerEvent(
+            hostname="worker1",
+            event="worker-heartbeat",
+            timestamp=ts + timedelta(seconds=1),
+            info={"active": 3},
+        ),
+    )
     worker = controller.get_worker("worker1")
     assert worker is not None
     assert worker.status == "ONLINE"
+    assert worker.active_tasks == 3
+
+
+def test_broker_queue_events(controller: BaseDBController) -> None:
+    ts = datetime(2024, 1, 3, 9, 0, 0, tzinfo=UTC)
+    controller.store_broker_queue_event(
+        BrokerQueueEvent(
+            broker_url="redis://localhost:6379/0",
+            queue="celery",
+            messages=5,
+            consumers=1,
+            timestamp=ts,
+        ),
+    )
+    sqlite_controller = cast("SQLiteController", controller)
+    with sqlite_controller._engine.begin() as conn:  # noqa: SLF001
+        count = conn.execute(text("select count(*) from broker_queue_events")).scalar_one()
+    assert int(count or 0) == 1
+    snapshot = controller.get_broker_queue_snapshot("redis://localhost:6379/0")
+    assert len(snapshot) == 1
 
 
 def test_schedules(controller: BaseDBController) -> None:

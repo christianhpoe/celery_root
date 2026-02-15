@@ -8,12 +8,11 @@
 
 from __future__ import annotations
 
-import functools
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import TYPE_CHECKING, Protocol, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from django.http import Http404, HttpResponseBadRequest
 from django.shortcuts import redirect, render
@@ -29,12 +28,10 @@ from .decorators import require_post
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from celery import Celery
     from django.http import HttpRequest, HttpResponse
 
 _WORKER_NOT_FOUND = "Worker not found"
 _OFFLINE_THRESHOLD = timedelta(minutes=2)
-_INSPECT_TIMEOUT_SECONDS = 1.0
 
 STATUS_BADGES = {
     "online": "badge-success",
@@ -50,8 +47,6 @@ TASK_BADGES = {
     "RETRY": "badge-warning",
     "REVOKED": "badge-muted",
 }
-
-_TASKINFO_ITEMS = ("rate_limit", "time_limit", "soft_time_limit")
 
 _POOL_META_LABELS = {
     "PID",
@@ -119,14 +114,6 @@ class _ActiveTaskRow(TypedDict):
 class _OverviewRow(TypedDict):
     label: str
     value: str
-
-
-class _Inspector(Protocol):
-    def stats(self) -> object: ...
-    def conf(self) -> object: ...
-    def active_queues(self) -> object: ...
-    def active(self) -> object: ...
-    def registered(self, *args: str) -> object: ...
 
 
 @dataclass(slots=True)
@@ -230,26 +217,6 @@ def _find_worker(hostname: str, workers: Sequence[_WorkerRow]) -> _WorkerRow | N
     for worker in workers:
         if worker.hostname == hostname:
             return worker
-    return None
-
-
-def _safe_call(call: Callable[[], object]) -> object | None:
-    try:
-        return call()
-    except Exception:  # noqa: BLE001 - best-effort inspector calls
-        return None
-
-
-def _build_inspector(app: Celery, hostname: str) -> _Inspector | None:
-    try:
-        return app.control.inspect(timeout=_INSPECT_TIMEOUT_SECONDS, destination=[hostname])
-    except TypeError:
-        return app.control.inspect(destination=[hostname])
-
-
-def _extract_host_payload(payload: object, hostname: str) -> object | None:
-    if isinstance(payload, dict):
-        return payload.get(hostname)
     return None
 
 
@@ -397,10 +364,12 @@ def _parse_queue_rows(entries: Sequence[object]) -> list[_QueueRow]:
 def _parse_active_count(value: object) -> int | None:
     if isinstance(value, list):
         return len(value)
+    if isinstance(value, int):
+        return value
     return None
 
 
-def _inspect_worker(
+def _snapshot_worker(
     hostname: str,
 ) -> tuple[
     list[_TaskRateRow],
@@ -411,54 +380,39 @@ def _inspect_worker(
     str | None,
     str | None,
 ]:
-    registry = get_registry()
-    apps = registry.get_apps()
-    if not apps:
-        return [], [], [], None, None, "No Celery apps configured for inspection.", None
-
-    for app in apps:
-        inspector = _build_inspector(app, hostname)
-        if inspector is None:
-            continue
-
-        stats_payload = _safe_call(inspector.stats)
-        conf_payload = _safe_call(inspector.conf)
-        queues_payload = _safe_call(inspector.active_queues)
-        active_payload = _safe_call(inspector.active)
-
-        registered_payload = _safe_call(functools.partial(inspector.registered, *_TASKINFO_ITEMS))
-        if registered_payload is None:
-            registered_payload = _safe_call(inspector.registered)
-
-        stats = _extract_host_payload(stats_payload, hostname)
-        conf = _extract_host_payload(conf_payload, hostname)
-        queues = _extract_host_payload(queues_payload, hostname)
-        registered = _extract_host_payload(registered_payload, hostname)
-
-        stats_map = stats if isinstance(stats, Mapping) else None
-        conf_map = conf if isinstance(conf, Mapping) else None
-        queue_rows: list[_QueueRow] = []
-        if isinstance(queues, Sequence) and not isinstance(queues, str | bytes):
-            queue_rows = _parse_queue_rows(queues)
-
-        task_rows: list[_TaskRateRow] = []
-        if isinstance(registered, Sequence) and not isinstance(registered, str | bytes):
-            task_rows = _parse_task_rows(registered)
-
-        metadata_rows = _build_metadata_rows(stats_map, conf_map)
-        active_count = _parse_active_count(_extract_host_payload(active_payload, hostname))
-        if task_rows or queue_rows or metadata_rows or stats_map:
-            return (
-                task_rows,
-                queue_rows,
-                metadata_rows,
-                stats_map,
-                active_count,
-                None,
-                app_name(app),
-            )
-
-    return [], [], [], None, None, "Worker did not respond to inspect calls.", None
+    with open_db() as db:
+        snapshot = db.get_worker_event_snapshot(hostname)
+    if snapshot is None:
+        return [], [], [], None, None, "No worker snapshot available.", None
+    info = snapshot.info
+    if not isinstance(info, Mapping):
+        return [], [], [], None, None, "Worker snapshot payload missing.", None
+    stats = info.get("stats")
+    stats_map = stats if isinstance(stats, Mapping) else info
+    conf = info.get("conf")
+    conf_map = conf if isinstance(conf, Mapping) else None
+    queues = info.get("queues")
+    registered = info.get("registered")
+    active = info.get("active")
+    queue_rows: list[_QueueRow] = []
+    if isinstance(queues, Sequence) and not isinstance(queues, str | bytes):
+        queue_rows = _parse_queue_rows(queues)
+    task_rows: list[_TaskRateRow] = []
+    if isinstance(registered, Sequence) and not isinstance(registered, str | bytes):
+        task_rows = _parse_task_rows(registered)
+    metadata_rows = _build_metadata_rows(stats_map, conf_map)
+    active_count = _parse_active_count(active)
+    app_name_value = info.get("app")
+    inspected_app_name = str(app_name_value) if isinstance(app_name_value, str) else None
+    return (
+        task_rows,
+        queue_rows,
+        metadata_rows,
+        stats_map,
+        active_count,
+        None,
+        inspected_app_name,
+    )
 
 
 def _fetch_active_rows(hostname: str) -> list[_ActiveTaskRow]:
@@ -499,7 +453,7 @@ def worker_detail_fragment(request: HttpRequest, hostname: str) -> HttpResponse:
 
     if worker.status == "offline":
         task_rows, queue_rows, metadata_rows, stats_map, active_count, inspected_app_name = [], [], [], None, None, None
-        inspect_error = "Worker is offline; inspection skipped."
+        inspect_error = "Worker is offline; snapshot unavailable."
     else:
         (
             task_rows,
@@ -509,7 +463,7 @@ def worker_detail_fragment(request: HttpRequest, hostname: str) -> HttpResponse:
             active_count,
             inspect_error,
             inspected_app_name,
-        ) = _inspect_worker(hostname)
+        ) = _snapshot_worker(hostname)
 
     pool_size = _resolve_pool_size(worker, stats_map)
     concurrency = worker.concurrency or pool_size
@@ -646,8 +600,8 @@ def _resolve_broker_detail(
         app = registry.get_app(inspected_app_name)
     except KeyError:
         return [], None, None, None
-    broker_queue_rows = broker_views.queue_rows_for_app(registry, app)
     broker_url = str(app.conf.broker_url or "")
+    broker_queue_rows, _latest = broker_views.queue_rows_for_broker_snapshot(broker_url)
     broker_key = broker_views.encode_broker_key(broker_url)
     broker_label = broker_url or "default"
     broker_type_label = broker_views.broker_type_label(broker_url)

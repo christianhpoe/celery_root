@@ -15,19 +15,20 @@ from urllib.parse import urlparse
 
 from django.http import Http404, HttpResponseBadRequest
 from django.shortcuts import redirect, render
-from django.utils import timezone
 
 from celery_root.components.web.services import app_name, get_registry, open_db
-from celery_root.core.engine.brokers import list_queues, purge_queues
+from celery_root.core.engine.brokers import purge_queues
 
 from .decorators import require_post
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from datetime import datetime
 
     from celery import Celery
     from django.http import HttpRequest, HttpResponse
 
+    from celery_root.core.db.adapters.base import BaseDBController
     from celery_root.core.db.models import Worker
     from celery_root.core.registry import WorkerRegistry
 
@@ -127,66 +128,31 @@ def broker_type_label(broker_url: str) -> str:
     return _broker_type_label(broker_url)
 
 
-def _queue_rows_for_apps(
-    registry: WorkerRegistry,
-    apps: Sequence[Celery],
-    *,
-    include_counts: bool = True,
-) -> list[QueueRow]:
-    queues_by_name: dict[str, QueueRow] = {}
-    for app in apps:
-        worker_name = app_name(app)
-        try:
-            queues = list_queues(registry, worker_name, include_counts=include_counts)
-        except Exception:  # noqa: BLE001  # pragma: no cover - broker failures handled gracefully
-            queues = []
-        for queue in queues:
-            pending = queue.messages
-            consumers = queue.consumers
-            existing = queues_by_name.get(queue.name)
-            if existing is None:
-                total = pending if pending is not None else None
-                queues_by_name[queue.name] = QueueRow(
-                    name=queue.name,
-                    pending=pending,
-                    unacked=None,
-                    total=total,
-                    consumers=consumers,
-                    rate=None,
-                )
-            else:
-                if pending is not None:
-                    if existing.pending is None:
-                        existing.pending = pending
-                    else:
-                        existing.pending = max(pending, existing.pending)
-                if consumers is not None and (existing.consumers is None or consumers > existing.consumers):
-                    existing.consumers = consumers
-                if existing.pending is not None and existing.unacked is not None:
-                    existing.total = existing.pending + existing.unacked
-                elif existing.pending is not None and existing.total is None:
-                    existing.total = existing.pending
-    return sorted(queues_by_name.values(), key=lambda row: row.name)
+def _queue_rows_from_db(db: BaseDBController, broker_url: str) -> tuple[list[QueueRow], datetime | None]:
+    events = db.get_broker_queue_snapshot(broker_url)
+    rows: list[QueueRow] = []
+    latest: datetime | None = None
+    for event in events:
+        rows.append(
+            QueueRow(
+                name=event.queue,
+                pending=event.messages,
+                unacked=None,
+                total=event.messages,
+                consumers=event.consumers,
+                rate=None,
+            ),
+        )
+        if latest is None or event.timestamp > latest:
+            latest = event.timestamp
+    rows.sort(key=lambda row: row.name)
+    return rows, latest
 
 
-def queue_rows_for_apps(
-    registry: WorkerRegistry,
-    apps: Sequence[Celery],
-    *,
-    include_counts: bool = True,
-) -> list[QueueRow]:
-    """Return queue rows for a set of Celery apps."""
-    return _queue_rows_for_apps(registry, apps, include_counts=include_counts)
-
-
-def queue_rows_for_app(
-    registry: WorkerRegistry,
-    app: Celery,
-    *,
-    include_counts: bool = True,
-) -> list[QueueRow]:
-    """Return queue rows for a single Celery app."""
-    return _queue_rows_for_apps(registry, [app], include_counts=include_counts)
+def queue_rows_for_broker_snapshot(broker_url: str) -> tuple[list[QueueRow], datetime | None]:
+    """Return queue rows from the latest broker snapshot."""
+    with open_db() as db:
+        return _queue_rows_from_db(db, broker_url)
 
 
 def _broker_summary(rows: Sequence[QueueRow]) -> Sequence[SummaryItem]:
@@ -264,35 +230,36 @@ def _resolve_broker_workers(
 
 def list_broker_groups(*, include_counts: bool = True) -> list[BrokerGroupRow]:
     """Return broker groupings for the overview tree."""
+    _ = include_counts
     registry = get_registry()
     broker_groups = registry.get_brokers()
     if not broker_groups:
         return []
+    groups: list[BrokerGroupRow] = []
     with open_db() as db:
         workers = db.get_workers()
-    groups: list[BrokerGroupRow] = []
-    for broker_url, group in sorted(broker_groups.items(), key=lambda item: item[0]):
-        apps = list(group.apps)
-        if not apps:
-            continue
-        app_names = [app_name(app) for app in apps]
-        queues = _queue_rows_for_apps(registry, apps, include_counts=include_counts)
-        attached_workers = _resolve_broker_workers(broker_url, queues, workers)
-        groups.append(
-            BrokerGroupRow(
-                broker_url=broker_url,
-                broker_label=broker_url or "default",
-                broker_key=_encode_broker_key(broker_url),
-                broker_type=_broker_type(broker_url),
-                broker_type_label=_broker_type_label(broker_url),
-                backend_labels=_backend_labels(apps),
-                app_names=app_names,
-                primary_app=app_names[0],
-                queues=queues,
-                summary=_broker_summary(queues),
-                workers=attached_workers,
-            ),
-        )
+        for broker_url, group in sorted(broker_groups.items(), key=lambda item: item[0]):
+            apps = list(group.apps)
+            if not apps:
+                continue
+            app_names = [app_name(app) for app in apps]
+            queues, _latest = _queue_rows_from_db(db, broker_url)
+            attached_workers = _resolve_broker_workers(broker_url, queues, workers)
+            groups.append(
+                BrokerGroupRow(
+                    broker_url=broker_url,
+                    broker_label=broker_url or "default",
+                    broker_key=_encode_broker_key(broker_url),
+                    broker_type=_broker_type(broker_url),
+                    broker_type_label=_broker_type_label(broker_url),
+                    backend_labels=_backend_labels(apps),
+                    app_names=app_names,
+                    primary_app=app_names[0],
+                    queues=queues,
+                    summary=_broker_summary(queues),
+                    workers=attached_workers,
+                ),
+            )
     return groups
 
 
@@ -326,9 +293,11 @@ def broker_detail(request: HttpRequest, broker_key: str) -> HttpResponse:
         raise Http404(_UNKNOWN_BROKER_MESSAGE)
     apps = list(group.apps)
     app_names = [app_name(app) for app in apps]
-    queues = _queue_rows_for_apps(registry, apps)
     with open_db() as db:
         workers = db.get_workers()
+        queues, latest = _queue_rows_from_db(db, broker_url)
+    if not queues:
+        latest = None
     broker_row = BrokerGroupRow(
         broker_url=broker_url,
         broker_label=broker_url or "default",
@@ -356,7 +325,7 @@ def broker_detail(request: HttpRequest, broker_key: str) -> HttpResponse:
     context = {
         "title": f"{broker_row.broker_type_label} broker",
         "broker": broker_row,
-        "last_updated": timezone.now(),
+        "last_updated": latest,
     }
     return render(request, template_name, context)
 
@@ -382,8 +351,16 @@ def broker_purge_idle(_request: HttpRequest) -> HttpResponse:
     worker_name = _resolve_app_name(registry, _request.POST.get("app"))
     if worker_name is None:
         return HttpResponseBadRequest("Unknown Celery app")
-    queue_infos = list_queues(registry, worker_name)
-    for info in queue_infos:
-        if (info.consumers or 0) == 0:
-            purge_queues(registry, worker_name, queue=info.name)
+    try:
+        app = registry.get_app(worker_name)
+    except KeyError:
+        return HttpResponseBadRequest("Unknown Celery app")
+    broker_url = str(app.conf.broker_url or "")
+    with open_db() as db:
+        snapshots = db.get_broker_queue_snapshot(broker_url)
+    if not snapshots:
+        return HttpResponseBadRequest("No broker snapshots available")
+    for snapshot in snapshots:
+        if (snapshot.consumers or 0) == 0:
+            purge_queues(registry, worker_name, queue=snapshot.queue)
     return redirect("broker")

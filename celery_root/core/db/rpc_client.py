@@ -19,6 +19,8 @@ from pydantic import BaseModel, ValidationError
 
 from celery_root.core.db.adapters.base import BaseDBController
 from celery_root.shared.schemas import (
+    BrokerQueueSnapshotRequest,
+    BrokerQueueSnapshotResponse,
     CleanupRequest,
     CleanupResponse,
     DbInfoRequest,
@@ -30,6 +32,7 @@ from celery_root.shared.schemas import (
     GetWorkerResponse,
     HeatmapRequest,
     HeatmapResponse,
+    IngestBrokerQueueEventRequest,
     IngestTaskEventRequest,
     IngestWorkerEventRequest,
     ListSchedulesRequest,
@@ -64,6 +67,8 @@ from celery_root.shared.schemas import (
     TaskStatsResponse,
     ThroughputRequest,
     ThroughputResponse,
+    WorkerEventSnapshotRequest,
+    WorkerEventSnapshotResponse,
 )
 
 if TYPE_CHECKING:
@@ -71,6 +76,7 @@ if TYPE_CHECKING:
 
     from celery_root.config import CeleryRootConfig
     from celery_root.shared.schemas.domain import (
+        BrokerQueueEvent,
         Schedule,
         Task,
         TaskEvent,
@@ -337,6 +343,19 @@ class DbRpcClient(BaseDBController):
         """Persist a worker event."""
         _ = self._call("events.worker.ingest", IngestWorkerEventRequest(event=event), Ok)
 
+    def store_broker_queue_event(self, event: BrokerQueueEvent) -> None:
+        """Persist a broker queue snapshot."""
+        _ = self._call("events.broker_queue.ingest", IngestBrokerQueueEventRequest(event=event), Ok)
+
+    def get_broker_queue_snapshot(self, broker_url: str) -> list[BrokerQueueEvent]:
+        """Return latest broker queue snapshots."""
+        response = self._call(
+            "broker.queues.snapshot",
+            BrokerQueueSnapshotRequest(broker_url=broker_url),
+            BrokerQueueSnapshotResponse,
+        )
+        return response.events
+
     def get_workers(self) -> list[Worker]:
         """Return all known workers."""
         response = self._call("workers.list", ListWorkersRequest(), ListWorkersResponse)
@@ -346,6 +365,15 @@ class DbRpcClient(BaseDBController):
         """Return a worker by hostname, if present."""
         response = self._call("workers.get", GetWorkerRequest(hostname=hostname), GetWorkerResponse)
         return response.worker
+
+    def get_worker_event_snapshot(self, hostname: str) -> WorkerEvent | None:
+        """Return latest worker event snapshot."""
+        response = self._call(
+            "workers.events.snapshot",
+            WorkerEventSnapshotRequest(hostname=hostname),
+            WorkerEventSnapshotResponse,
+        )
+        return response.event
 
     def get_task_stats(self, task_name: str | None, time_range: TimeRange | None) -> TaskStats:
         """Return aggregated task statistics."""

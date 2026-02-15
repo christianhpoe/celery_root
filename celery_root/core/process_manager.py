@@ -28,6 +28,7 @@ from celery_root.core.db.manager import DBManager
 from celery_root.core.logging.setup import configure_process_logging
 
 from .event_listener import EventListener
+from .reconciler import Reconciler
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -343,6 +344,10 @@ class ProcessManager:
                 self._config,
                 metrics_queues=tuple(metrics_queues),
             )
+        self._process_factories["reconciler"] = functools.partial(
+            Reconciler,
+            self._config,
+        )
         if self._config.frontend is not None:
             self._process_factories["web"] = functools.partial(
                 _WebServerProcess,

@@ -8,6 +8,7 @@
 
 from .adapters.base import BaseDBController
 from .models import (
+    BrokerQueueEvent,
     Schedule,
     Task,
     TaskEvent,
@@ -26,6 +27,7 @@ DbClient = BaseDBController
 
 __all__ = [
     "BaseDBController",
+    "BrokerQueueEvent",
     "DbClient",
     "DbRpcClient",
     "RpcCallError",

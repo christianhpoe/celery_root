@@ -7,6 +7,7 @@
 """Shared schemas for Celery Root components."""
 
 from .domain import (
+    BrokerQueueEvent,
     Schedule,
     Task,
     TaskEvent,
@@ -21,6 +22,8 @@ from .domain import (
 )
 from .rpc import (
     RPC_SCHEMA_VERSION,
+    BrokerQueueSnapshotRequest,
+    BrokerQueueSnapshotResponse,
     CleanupRequest,
     CleanupResponse,
     DbInfoRequest,
@@ -32,6 +35,7 @@ from .rpc import (
     GetWorkerResponse,
     HeatmapRequest,
     HeatmapResponse,
+    IngestBrokerQueueEventRequest,
     IngestTaskEventRequest,
     IngestWorkerEventRequest,
     ListSchedulesRequest,
@@ -69,10 +73,15 @@ from .rpc import (
     TaskStatsResponse,
     ThroughputRequest,
     ThroughputResponse,
+    WorkerEventSnapshotRequest,
+    WorkerEventSnapshotResponse,
 )
 
 __all__ = [
     "RPC_SCHEMA_VERSION",
+    "BrokerQueueEvent",
+    "BrokerQueueSnapshotRequest",
+    "BrokerQueueSnapshotResponse",
     "CleanupRequest",
     "CleanupResponse",
     "DbInfoRequest",
@@ -84,6 +93,7 @@ __all__ = [
     "GetWorkerResponse",
     "HeatmapRequest",
     "HeatmapResponse",
+    "IngestBrokerQueueEventRequest",
     "IngestTaskEventRequest",
     "IngestWorkerEventRequest",
     "ListSchedulesRequest",
@@ -131,5 +141,7 @@ __all__ = [
     "TimeRange",
     "Worker",
     "WorkerEvent",
+    "WorkerEventSnapshotRequest",
+    "WorkerEventSnapshotResponse",
     "WorkerStats",
 ]

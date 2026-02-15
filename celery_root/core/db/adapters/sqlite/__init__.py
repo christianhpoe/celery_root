@@ -36,6 +36,7 @@ from sqlalchemy.pool import StaticPool
 
 from celery_root.core.db.adapters.base import BaseDBController
 from celery_root.core.db.models import (
+    BrokerQueueEvent,
     Schedule,
     Task,
     TaskEvent,
@@ -62,6 +63,7 @@ _SQLITE_BUSY_TIMEOUT_MS = 30_000
 _SCHEDULE_APP_SCHEMA_VERSION = 2
 _BROKER_URL_SCHEMA_VERSION = 3
 _STAMPS_SCHEMA_VERSION = 4
+_BROKER_QUEUE_SCHEMA_VERSION = 5
 
 
 def _configure_sqlite(dbapi_connection: SQLiteConnection, _connection_record: object) -> None:
@@ -138,7 +140,7 @@ def _merge_retries(existing: int | None, incoming: int | None) -> int | None:
 class SQLiteController(BaseDBController):
     """SQLite-backed controller."""
 
-    _SCHEMA_VERSION = 4
+    _SCHEMA_VERSION = 5
 
     def __init__(self, path: str | Path | None = None) -> None:
         """Initialize the SQLite controller with a database path or in-memory storage."""
@@ -199,6 +201,19 @@ class SQLiteController(BaseDBController):
             if from_version < _STAMPS_SCHEMA_VERSION <= to_version:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN stamps TEXT"))
                 conn.execute(text("ALTER TABLE task_events ADD COLUMN stamps TEXT"))
+            if from_version < _BROKER_QUEUE_SCHEMA_VERSION <= to_version:
+                conn.execute(
+                    text(
+                        "CREATE TABLE IF NOT EXISTS broker_queue_events ("
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "broker_url TEXT NOT NULL, "
+                        "queue TEXT NOT NULL, "
+                        "messages INTEGER, "
+                        "consumers INTEGER, "
+                        "timestamp DATETIME NOT NULL"
+                        ")",
+                    ),
+                )
             conn.execute(self._schema_version.delete())
             conn.execute(self._schema_version.insert().values(version=to_version))
 
@@ -329,6 +344,44 @@ class SQLiteController(BaseDBController):
             )
             conn.execute(stmt)
 
+    def store_broker_queue_event(self, event: BrokerQueueEvent) -> None:
+        """Persist a broker queue snapshot."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                self._broker_queue_events.insert().values(
+                    broker_url=event.broker_url,
+                    queue=event.queue,
+                    messages=event.messages,
+                    consumers=event.consumers,
+                    timestamp=event.timestamp,
+                ),
+            )
+
+    def get_broker_queue_snapshot(self, broker_url: str) -> list[BrokerQueueEvent]:
+        """Return latest broker queue snapshots for a broker."""
+        latest_ids = (
+            select(func.max(self._broker_queue_events.c.id).label("id"))
+            .where(self._broker_queue_events.c.broker_url == broker_url)
+            .group_by(self._broker_queue_events.c.queue)
+        )
+        stmt = select(self._broker_queue_events).where(self._broker_queue_events.c.id.in_(latest_ids))
+        with self._engine.begin() as conn:
+            rows = conn.execute(stmt).all()
+        events: list[BrokerQueueEvent] = []
+        for row in rows:
+            data = _row_dict(row)
+            events.append(
+                BrokerQueueEvent(
+                    broker_url=_as_str(data["broker_url"]),
+                    queue=_as_str(data["queue"]),
+                    messages=_as_optional_int(data.get("messages")),
+                    consumers=_as_optional_int(data.get("consumers")),
+                    timestamp=_coerce_dt(_as_optional_datetime(data.get("timestamp"))) or datetime.now(UTC),
+                ),
+            )
+        events.sort(key=lambda event: event.queue)
+        return events
+
     def get_workers(self) -> list[Worker]:
         """Return all workers."""
         with self._engine.begin() as conn:
@@ -341,6 +394,37 @@ class SQLiteController(BaseDBController):
         with self._engine.begin() as conn:
             row = conn.execute(stmt).first()
         return self._row_to_worker(_row_dict(row)) if row else None
+
+    def get_worker_event_snapshot(self, hostname: str) -> WorkerEvent | None:
+        """Return the latest worker event snapshot for a hostname."""
+        stmt = (
+            select(self._worker_events)
+            .where(self._worker_events.c.hostname == hostname)
+            .order_by(self._worker_events.c.timestamp.desc(), self._worker_events.c.id.desc())
+            .limit(1)
+        )
+        with self._engine.begin() as conn:
+            row = conn.execute(stmt).first()
+        if row is None:
+            return None
+        data = _row_dict(row)
+        info_raw = _as_optional_str(data.get("info"))
+        info: dict[str, object] | None = None
+        if info_raw:
+            try:
+                parsed = json.loads(info_raw)
+            except json.JSONDecodeError:
+                info = {"value": info_raw}
+            else:
+                info = parsed if isinstance(parsed, dict) else {"value": parsed}
+        timestamp = _coerce_dt(_as_optional_datetime(data.get("timestamp"))) or datetime.now(UTC)
+        return WorkerEvent(
+            hostname=_as_str(data["hostname"]),
+            event=_as_str(data["event"]),
+            timestamp=timestamp,
+            info=info,
+            broker_url=_as_optional_str(data.get("broker_url")),
+        )
 
     def get_task_stats(self, task_name: str | None, time_range: TimeRange | None) -> TaskStats:
         """Compute task runtime statistics."""
@@ -431,6 +515,10 @@ class SQLiteController(BaseDBController):
             result = conn.execute(delete(self._tasks).where(ts_col < cutoff))
             total_removed += result.rowcount or 0
             result = conn.execute(delete(self._worker_events).where(self._worker_events.c.timestamp < cutoff))
+            total_removed += result.rowcount or 0
+            result = conn.execute(
+                delete(self._broker_queue_events).where(self._broker_queue_events.c.timestamp < cutoff),
+            )
             total_removed += result.rowcount or 0
             result = conn.execute(
                 delete(self._workers).where(
@@ -552,6 +640,16 @@ class SQLiteController(BaseDBController):
             Column("registered_tasks", Text),
             Column("queues", Text),
             Column("broker_url", Text),
+        )
+        self._broker_queue_events = Table(
+            "broker_queue_events",
+            self._metadata,
+            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("broker_url", Text, nullable=False),
+            Column("queue", Text, nullable=False),
+            Column("messages", Integer),
+            Column("consumers", Integer),
+            Column("timestamp", DateTime(timezone=True), nullable=False),
         )
         self._schedules = Table(
             "schedules",
@@ -750,6 +848,8 @@ class SQLiteController(BaseDBController):
     def _parse_active_tasks(value: object) -> int | None:
         if isinstance(value, list):
             return len(value)
+        if isinstance(value, int):
+            return value
         return None
 
     @staticmethod

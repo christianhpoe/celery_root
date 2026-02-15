@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 if TYPE_CHECKING:
     from .domain import (
+        BrokerQueueEvent,
         Schedule,
         Task,
         TaskEvent,
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     )
 else:
     _domain = importlib.import_module("celery_root.shared.schemas.domain")
+    BrokerQueueEvent = _domain.BrokerQueueEvent
     Schedule = _domain.Schedule
     Task = _domain.Task
     TaskEvent = _domain.TaskEvent
@@ -111,6 +113,37 @@ class IngestWorkerEventRequest(_BaseSchema):
 
     event: WorkerEvent
     idempotency_key: str | None = None
+
+
+class IngestBrokerQueueEventRequest(_BaseSchema):
+    """Request to ingest a broker queue snapshot."""
+
+    event: BrokerQueueEvent
+    idempotency_key: str | None = None
+
+
+class BrokerQueueSnapshotRequest(_BaseSchema):
+    """Request latest broker queue snapshots."""
+
+    broker_url: str
+
+
+class BrokerQueueSnapshotResponse(_BaseSchema):
+    """Response with latest broker queue snapshots."""
+
+    events: list[BrokerQueueEvent]
+
+
+class WorkerEventSnapshotRequest(_BaseSchema):
+    """Request latest worker event snapshot."""
+
+    hostname: str
+
+
+class WorkerEventSnapshotResponse(_BaseSchema):
+    """Response with latest worker event snapshot."""
+
+    event: WorkerEvent | None = None
 
 
 class StoreTaskRelationRequest(_BaseSchema):

@@ -133,7 +133,10 @@ SPDX-License-Identifier: BSD-3-Clause
 <section class="detail-card">
   <h3>Broker activity</h3>
   <p>
-    Last refreshed at {{ last_updated|time:"H:i:s" }} ({{ last_updated|date:"M d, Y" }}).
-    Refresh manually to query the broker again.
+    {% if last_updated %}
+      Last refreshed at {{ last_updated|time:"H:i:s" }} ({{ last_updated|date:"M d, Y" }}).
+    {% else %}
+      No broker snapshots available yet. Waiting for reconciler.
+    {% endif %}
   </p>
 </section>

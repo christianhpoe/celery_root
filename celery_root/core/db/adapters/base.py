@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from celery_root.core.db.models import (
+        BrokerQueueEvent,
         Schedule,
         Task,
         TaskEvent,
@@ -100,6 +101,16 @@ class BaseDBController(ABC):
         ...
 
     @abstractmethod
+    def store_broker_queue_event(self, event: BrokerQueueEvent) -> None:
+        """Persist a broker queue snapshot."""
+        ...
+
+    @abstractmethod
+    def get_broker_queue_snapshot(self, broker_url: str) -> Sequence[BrokerQueueEvent]:
+        """Return the latest broker queue snapshots."""
+        ...
+
+    @abstractmethod
     def get_workers(self) -> Sequence[Worker]:
         """Return all known workers."""
         ...
@@ -107,6 +118,11 @@ class BaseDBController(ABC):
     @abstractmethod
     def get_worker(self, hostname: str) -> Worker | None:
         """Return a worker by hostname, if present."""
+        ...
+
+    @abstractmethod
+    def get_worker_event_snapshot(self, hostname: str) -> WorkerEvent | None:
+        """Return the latest worker event snapshot."""
         ...
 
     @abstractmethod

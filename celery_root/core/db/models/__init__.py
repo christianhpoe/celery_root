@@ -7,6 +7,7 @@
 """Shared domain models used by the database controllers."""
 
 from celery_root.shared.schemas import (
+    BrokerQueueEvent,
     Schedule,
     Task,
     TaskEvent,
@@ -21,6 +22,7 @@ from celery_root.shared.schemas import (
 )
 
 __all__ = [
+    "BrokerQueueEvent",
     "Schedule",
     "Task",
     "TaskEvent",

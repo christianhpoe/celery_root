@@ -62,6 +62,16 @@ class WorkerEvent(_BaseSchema):
     broker_url: str | None = None
 
 
+class BrokerQueueEvent(_BaseSchema):
+    """Incoming broker queue snapshot."""
+
+    broker_url: str
+    queue: str
+    messages: int | None = None
+    consumers: int | None = None
+    timestamp: Datetime
+
+
 class Task(_BaseSchema):
     """Stored task record."""
 

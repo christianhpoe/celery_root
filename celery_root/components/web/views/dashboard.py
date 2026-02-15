@@ -15,9 +15,8 @@ from typing import TYPE_CHECKING, TypedDict
 from django.shortcuts import render
 from django.utils import timezone
 
-from celery_root.components.web.services import app_name, get_registry, open_db
+from celery_root.components.web.services import get_registry, open_db
 from celery_root.core.db.models import TaskFilter, TimeRange
-from celery_root.core.engine.brokers import list_queues
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -25,7 +24,6 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
     from celery_root.core.db.models import Task, TaskStats, Worker
-    from celery_root.core.engine.brokers import QueueInfo
 
 STATE_BADGES = {
     "SUCCESS": "badge-success",
@@ -237,15 +235,11 @@ def _compute_metrics(now: datetime) -> _SummaryMetrics:
         tasks_delta_pct = _task_delta_percentage(tasks_today, now)
 
         registry = get_registry()
-        apps = registry.get_apps()
-        queue_infos: list[QueueInfo] = []
-        if apps:
-            worker_name = app_name(apps[0])
-            try:
-                queue_infos = list_queues(registry, worker_name)
-            except Exception:  # noqa: BLE001  # pragma: no cover - broker failures handled gracefully
-                queue_infos = []
-        pending_tasks = sum(info.messages or 0 for info in queue_infos)
+        broker_groups = registry.get_brokers()
+        pending_tasks = 0
+        for broker_url in broker_groups:
+            snapshots = db.get_broker_queue_snapshot(broker_url)
+            pending_tasks += sum(event.messages or 0 for event in snapshots)
 
     return _SummaryMetrics(
         workers_online=online,
@@ -409,7 +403,7 @@ def _worker_summary(now: datetime) -> list[_WorkerSummary]:
         state_cells: list[_WorkerStateCell] = [
             {"state": state, "count": stats.get(state, 0)} for state in _WORKER_STATE_COLUMNS
         ]
-        active = stats.get("STARTED", 0) if worker.active_tasks is None else worker.active_tasks
+        active = worker.active_tasks if worker.active_tasks is not None else 0
         processed = sum(stats.get(state, 0) for state in ("SUCCESS", "FAILURE", "REVOKED"))
         pool_size = worker.pool_size
         registered = len(worker.registered_tasks or []) or None

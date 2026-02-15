@@ -16,6 +16,8 @@ from sqlalchemy import inspect, text
 
 from celery_root.core.db.adapters.sqlite import SQLiteController
 from celery_root.shared.schemas import (
+    BrokerQueueSnapshotRequest,
+    BrokerQueueSnapshotResponse,
     CleanupRequest,
     CleanupResponse,
     DbInfoRequest,
@@ -27,6 +29,7 @@ from celery_root.shared.schemas import (
     GetWorkerResponse,
     HeatmapRequest,
     HeatmapResponse,
+    IngestBrokerQueueEventRequest,
     IngestTaskEventRequest,
     IngestWorkerEventRequest,
     ListSchedulesRequest,
@@ -61,6 +64,8 @@ from celery_root.shared.schemas import (
     TaskStatsResponse,
     ThroughputRequest,
     ThroughputResponse,
+    WorkerEventSnapshotRequest,
+    WorkerEventSnapshotResponse,
 )
 from celery_root.shared.schemas.domain import TaskEvent, TaskRelation
 
@@ -205,6 +210,27 @@ def _ingest_worker_event(controller: BaseDBController, request: IngestWorkerEven
     return Ok()
 
 
+def _ingest_broker_queue_event(controller: BaseDBController, request: IngestBrokerQueueEventRequest) -> Ok:
+    controller.store_broker_queue_event(request.event)
+    return Ok()
+
+
+def _broker_queue_snapshot(
+    controller: BaseDBController,
+    request: BrokerQueueSnapshotRequest,
+) -> BrokerQueueSnapshotResponse:
+    events = list(controller.get_broker_queue_snapshot(request.broker_url))
+    return BrokerQueueSnapshotResponse(events=events)
+
+
+def _worker_event_snapshot(
+    controller: BaseDBController,
+    request: WorkerEventSnapshotRequest,
+) -> WorkerEventSnapshotResponse:
+    event = controller.get_worker_event_snapshot(request.hostname)
+    return WorkerEventSnapshotResponse(event=event)
+
+
 def _store_relation(controller: BaseDBController, request: StoreTaskRelationRequest) -> Ok:
     controller.store_task_relation(request.relation)
     return Ok()
@@ -328,6 +354,24 @@ RPC_OPERATIONS: dict[str, RpcOperation[Any, Any]] = {
         IngestWorkerEventRequest,
         Ok,
         _ingest_worker_event,
+    ),
+    "events.broker_queue.ingest": RpcOperation(
+        "events.broker_queue.ingest",
+        IngestBrokerQueueEventRequest,
+        Ok,
+        _ingest_broker_queue_event,
+    ),
+    "broker.queues.snapshot": RpcOperation(
+        "broker.queues.snapshot",
+        BrokerQueueSnapshotRequest,
+        BrokerQueueSnapshotResponse,
+        _broker_queue_snapshot,
+    ),
+    "workers.events.snapshot": RpcOperation(
+        "workers.events.snapshot",
+        WorkerEventSnapshotRequest,
+        WorkerEventSnapshotResponse,
+        _worker_event_snapshot,
     ),
     "relations.store": RpcOperation(
         "relations.store",

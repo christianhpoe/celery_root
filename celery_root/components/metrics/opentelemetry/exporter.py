@@ -403,4 +403,6 @@ def _parse_pool_size(value: object) -> int | None:
 def _parse_active_tasks(value: object) -> int | None:
     if isinstance(value, list):
         return len(value)
+    if isinstance(value, int):
+        return value
     return None
