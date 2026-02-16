@@ -167,6 +167,18 @@
   min-height: 520px;
 }
 
+.dag-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--dag-muted);
+  font-size: 13px;
+  padding: 24px;
+  pointer-events: none;
+}
+
 .dag-layout-banner {
   position: absolute;
   top: 16px;
@@ -311,7 +323,7 @@
 .dag-node {
   background: var(--dag-surface);
   border-radius: 14px;
-  border: 1px solid var(--dag-border);
+  border: 1px solid var(--dag-task-border, var(--dag-border));
   padding: 10px 12px;
   display: flex;
   flex-direction: column;

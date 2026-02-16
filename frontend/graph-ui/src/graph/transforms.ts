@@ -30,6 +30,7 @@ export interface TaskNodeData {
   id: string;
   title: string;
   taskName: string | null;
+  taskTypeColor: string | null;
   state: TaskState | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -341,6 +342,7 @@ export function buildTaskNodeData(
   node: GraphNodePayload,
   showMeta: boolean,
   handleDirection: "RIGHT" | "DOWN",
+  taskTypeColor: string | null,
 ): TaskNodeData {
   const title = node.task_name ?? node.kind ?? node.id;
   const isVirtual = !node.state && Boolean(node.kind);
@@ -348,6 +350,7 @@ export function buildTaskNodeData(
     id: node.id,
     title,
     taskName: node.task_name,
+    taskTypeColor,
     state: node.state,
     startedAt: node.started_at,
     finishedAt: node.finished_at,
@@ -376,6 +379,7 @@ export function buildReactFlowNodes(
   highlight: Set<string>,
   queryMatches: Set<string>,
   handleDirection: "RIGHT" | "DOWN",
+  taskTypeColors?: Map<string, string>,
 ): Node<TaskNodeData>[] {
   const result: Node<TaskNodeData>[] = [];
   const sourcePosition = handleDirection === "DOWN" ? Position.Bottom : Position.Right;
@@ -387,10 +391,11 @@ export function buildReactFlowNodes(
     const type = node.kind === "chord" && !node.state ? "chordNode" : "taskNode";
     const isHighlighted = highlight.has(node.id);
     const isMatch = queryMatches.has(node.id);
+    const taskTypeColor = node.task_name ? taskTypeColors?.get(node.task_name) ?? null : null;
     result.push({
       id: node.id,
       type,
-      data: buildTaskNodeData(node, showMeta, handleDirection),
+      data: buildTaskNodeData(node, showMeta, handleDirection, taskTypeColor),
       position: { x: 0, y: 0 },
       sourcePosition,
       targetPosition,

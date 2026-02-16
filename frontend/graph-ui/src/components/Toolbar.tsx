@@ -26,7 +26,6 @@ interface ToolbarProps {
 }
 
 const STATE_ORDER = DEFAULT_STATE_ORDER;
-
 export default function Toolbar(props: ToolbarProps) {
   return (
     <div className="dag-toolbar">

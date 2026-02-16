@@ -4,7 +4,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import clsx from "clsx";
 
@@ -52,6 +52,13 @@ function TaskNode({ data, selected }: NodeProps<TaskNodeData>) {
         "is-selected": selected,
         "is-virtual": data.isVirtual,
       })}
+      style={
+        data.taskTypeColor
+          ? ({
+              "--dag-task-border": data.taskTypeColor,
+            } as CSSProperties)
+          : undefined
+      }
     >
       <Handle type="target" position={handlePosition} className="dag-handle" />
       <Handle type="source" position={handleSourcePosition} className="dag-handle" />

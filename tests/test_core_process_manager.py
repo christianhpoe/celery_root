@@ -161,6 +161,7 @@ def test_wait_for_db_socket(manager_config: CeleryRootConfig) -> None:
     manager = ProcessManager(cast("WorkerRegistry", registry), manager_config, None)
     socket_path = Path(manager_config.database.rpc_address())
     socket_path.parent.mkdir(parents=True, exist_ok=True)
+    socket_path.unlink(missing_ok=True)
     socket_path.write_text("ready")
     manager._wait_for_db_socket(cast("Process", _DummyProcess(alive=True)))
     socket_path.unlink(missing_ok=True)

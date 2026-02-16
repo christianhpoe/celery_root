@@ -21,9 +21,6 @@ SPDX-License-Identifier: BSD-3-Clause
   <section>
     <div id="dag-container" class="dag-canvas">Loading graph…</div>
   </section>
-  {{ nodes|json_script:"dag-nodes" }}
-  {{ edges|json_script:"dag-edges" }}
-  {{ meta|json_script:"dag-meta" }}
 {% endblock %}
 
 {% block scripts %}
@@ -31,12 +28,9 @@ SPDX-License-Identifier: BSD-3-Clause
   <script src="{% static 'graph/graph.js' %}?v={{ last_updated|date:'U' }}"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      const nodesEl = document.getElementById("dag-nodes");
-      const edgesEl = document.getElementById("dag-edges");
-      const metaEl = document.getElementById("dag-meta");
-      const nodes = nodesEl ? JSON.parse(nodesEl.textContent) : [];
-      const edges = edgesEl ? JSON.parse(edgesEl.textContent) : [];
-      const meta = metaEl ? JSON.parse(metaEl.textContent) : {};
+      const nodes = [];
+      const edges = [];
+      const meta = {};
       const el = document.getElementById("dag-container");
       const themeAttr = document.documentElement.getAttribute("data-theme");
       const darkThemes = new Set(["dark", "darkula", "monokai", "solaris-dark"]);

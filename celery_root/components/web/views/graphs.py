@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING, Literal, TypedDict
 
 from django.http import Http404, JsonResponse
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
 
 _TASK_NOT_FOUND = "Task not found"
 _PREVIEW_LIMIT = 256
+_LOGGER = logging.getLogger(__name__)
 _CANVAS_TASK_KIND: dict[str, str] = {
     "celery.chain": "chain",
     "celery.group": "group",
@@ -230,7 +233,7 @@ def _collect_nodes_and_edges(
     root_id: str,
     relations: Sequence[TaskRelation],
     db: DbClient,
-) -> tuple[set[str], list[dict[str, str | None]]]:
+) -> tuple[set[str], list[dict[str, str | None]], list[Task]]:
     node_ids: set[str] = {root_id}
     edges = _build_edges(relations)
     edge_keys: set[tuple[str, str, str]] = set()
@@ -257,7 +260,7 @@ def _collect_nodes_and_edges(
         if item.chord_id:
             _append_edge(edges, edge_keys, parent=item.chord_id, child=item.task_id, relation="chord")
             node_ids.add(item.chord_id)
-    return node_ids, edges
+    return node_ids, edges, tasks
 
 
 def _build_state_counts(nodes_payload: Sequence[GraphNode]) -> GraphCounts:
@@ -296,7 +299,7 @@ def _build_graph_payload(task_id: str, db: DbClient) -> GraphPayload:
         raise Http404(_TASK_NOT_FOUND)
     root_id = task.root_id or task.task_id
     relations = db.get_task_relations(root_id)
-    node_ids, edges = _collect_nodes_and_edges(root_id, relations, db)
+    node_ids, edges, tasks = _collect_nodes_and_edges(root_id, relations, db)
     kind_map = _node_kind_map(edges)
     nodes_payload: list[GraphNode] = []
     for node_id in sorted(node_ids):
@@ -304,6 +307,20 @@ def _build_graph_payload(task_id: str, db: DbClient) -> GraphPayload:
         node_kind = _canvas_kind(node_task) or kind_map.get(node_id)
         nodes_payload.append(_serialize_node(node_task, node_id, node_kind, root_id))
     edges_payload = [edge for edge in (_serialize_edge(edge) for edge in edges) if edge is not None]
+    if len(nodes_payload) > 1 and not edges_payload:
+        parent_count = sum(1 for task in tasks if task.parent_id)
+        group_count = sum(1 for task in tasks if task.group_id)
+        chord_count = sum(1 for task in tasks if task.chord_id)
+        _LOGGER.warning(
+            "graph edges missing root_id=%s nodes=%d relations=%d tasks=%d parent=%d group=%d chord=%d",
+            root_id,
+            len(nodes_payload),
+            len(relations),
+            len(tasks),
+            parent_count,
+            group_count,
+            chord_count,
+        )
     meta: GraphMeta = {
         "root_id": root_id,
         "generated_at": timezone.now().isoformat(),
@@ -312,11 +329,23 @@ def _build_graph_payload(task_id: str, db: DbClient) -> GraphPayload:
     return {"meta": meta, "nodes": nodes_payload, "edges": edges_payload}
 
 
+def _build_graph_payload_with_retry(task_id: str, db: DbClient) -> GraphPayload:
+    payload = _build_graph_payload(task_id, db)
+    if payload["edges"] or len(payload["nodes"]) <= 1:
+        return payload
+    for delay in (0.05, 0.1, 0.2, 0.4):
+        time.sleep(delay)
+        payload = _build_graph_payload(task_id, db)
+        if payload["edges"] or len(payload["nodes"]) <= 1:
+            break
+    return payload
+
+
 def task_graph(request: HttpRequest, task_id: str) -> HttpResponse:
     """Render a task relation graph based on stored relations."""
     try:
         with open_db() as db:
-            payload = _build_graph_payload(task_id, db)
+            payload = _build_graph_payload_with_retry(task_id, db)
     except Http404:
         return render(
             request,
@@ -325,6 +354,12 @@ def task_graph(request: HttpRequest, task_id: str) -> HttpResponse:
             status=404,
         )
     meta = payload["meta"]
+    _LOGGER.info(
+        "task_graph_html root_id=%s nodes=%d edges=%d",
+        meta["root_id"],
+        len(payload["nodes"]),
+        len(payload["edges"]),
+    )
     return render(
         request,
         "tasks/graph.html",
@@ -345,14 +380,26 @@ def task_graph(request: HttpRequest, task_id: str) -> HttpResponse:
 def task_graph_api(_request: HttpRequest, task_id: str) -> JsonResponse:
     """Return a JSON snapshot of a task graph."""
     with open_db() as db:
-        payload = _build_graph_payload(task_id, db)
+        payload = _build_graph_payload_with_retry(task_id, db)
+    _LOGGER.info(
+        "task_graph_api root_id=%s nodes=%d edges=%d",
+        payload["meta"]["root_id"],
+        len(payload["nodes"]),
+        len(payload["edges"]),
+    )
     return JsonResponse(payload)
 
 
 def task_graph_updates_api(_request: HttpRequest, task_id: str) -> JsonResponse:
     """Return incremental task graph updates."""
     with open_db() as db:
-        payload = _build_graph_payload(task_id, db)
+        payload = _build_graph_payload_with_retry(task_id, db)
+    _LOGGER.info(
+        "task_graph_updates_api root_id=%s nodes=%d edges=%d",
+        payload["meta"]["root_id"],
+        len(payload["nodes"]),
+        len(payload["edges"]),
+    )
     node_updates = []
     for node in payload["nodes"]:
         update = {
