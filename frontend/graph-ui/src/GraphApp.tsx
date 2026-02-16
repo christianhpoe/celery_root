@@ -41,7 +41,14 @@ import {
   type GraphFlowNode,
   type GraphModel,
 } from "./graph/transforms";
-import type { GraphEdgePayload, GraphOptions, GraphPayload, GraphUpdatePayload, TaskState } from "./graph/types";
+import type {
+  GraphEdgePayload,
+  GraphMetaCounts,
+  GraphOptions,
+  GraphPayload,
+  GraphUpdatePayload,
+  TaskState,
+} from "./graph/types";
 
 interface GraphAppProps {
   payload: GraphPayload;
@@ -113,6 +120,21 @@ function deriveSnapshotUrl(options?: GraphOptions): string | undefined {
   return refreshUrl;
 }
 
+function totalFromCounts(counts: GraphMetaCounts | null | undefined): number {
+  if (!counts) {
+    return 0;
+  }
+  return (
+    counts.total +
+    counts.pending +
+    counts.running +
+    counts.retry +
+    counts.success +
+    counts.failure +
+    counts.revoked
+  );
+}
+
 function GraphCanvas({ payload, options }: GraphAppProps) {
   const [graphModel, setGraphModel] = useState<GraphModel>(() => buildGraphModel(payload));
   const [filter, setFilter] = useState<FilterState>(() =>
@@ -131,6 +153,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
   const baseEdgesRef = useRef<ReturnType<typeof buildReactFlowEdges>>([]);
   const lastStableEdgesRef = useRef<GraphEdgePayload[]>([]);
   const graphModelRef = useRef<GraphModel>(graphModel);
+  const snapshotAttemptRef = useRef<string | null>(null);
   const manualPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const lastLayoutKeyRef = useRef<string | null>(null);
   const hasFitRef = useRef(false);
@@ -160,6 +183,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
     }
     return computeCounts(graphModel.nodes.values());
   }, [graphModel.meta, graphModel.nodes]);
+  const countTotal = totalFromCounts(counts);
   const hasActive = counts.pending > 0 || counts.running > 0 || counts.retry > 0;
 
   useEffect(() => {
@@ -389,6 +413,34 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
   }, [queryMatches, rfNodes]);
 
   useEffect(() => {
+    if (graphModel.nodes.size > 0 || countTotal <= 0) {
+      return;
+    }
+    const snapshotUrl = deriveSnapshotUrl(options);
+    if (!snapshotUrl) {
+      return;
+    }
+    const attemptKey = `${snapshotUrl}:${graphModel.meta?.generated_at ?? "unknown"}`;
+    if (snapshotAttemptRef.current === attemptKey) {
+      return;
+    }
+    snapshotAttemptRef.current = attemptKey;
+    fetch(snapshotUrl, { headers: { Accept: "application/json" } })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((snapshot) => {
+        if (!snapshot) {
+          return;
+        }
+        const payload = snapshot as GraphPayload;
+        if (payload.nodes.length === 0) {
+          return;
+        }
+        setGraphModel(buildGraphModel(payload));
+      })
+      .catch(() => undefined);
+  }, [countTotal, graphModel.meta, graphModel.nodes.size, options]);
+
+  useEffect(() => {
     if (!options?.refreshUrl || !hasActive) {
       return undefined;
     }
@@ -403,6 +455,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
         active = false;
         return;
       }
+      const currentModel = graphModelRef.current;
       const since = lastUpdateRef.current;
       const url = new URL(options.refreshUrl, window.location.origin);
       if (since) {
@@ -420,6 +473,13 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
           const snapshotResponse = await fetch(snapshotUrl, { headers: { Accept: "application/json" } });
           if (snapshotResponse.ok) {
             const snapshot = (await snapshotResponse.json()) as GraphPayload;
+            if (
+              snapshot.nodes.length === 0 &&
+              currentModel.nodes.size > 0 &&
+              totalFromCounts(snapshot.meta?.counts) > 0
+            ) {
+              return;
+            }
             setGraphModel(buildGraphModel(snapshot));
             completedAtRef.current = null;
           }
@@ -429,7 +489,6 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
       if (payload.node_updates.length === 0) {
         return;
       }
-      const currentModel = graphModelRef.current;
       if (
         payload.node_count !== currentModel.nodes.size ||
         payload.edge_count !== currentModel.edges.length
@@ -439,6 +498,13 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
           const snapshotResponse = await fetch(snapshotUrl, { headers: { Accept: "application/json" } });
           if (snapshotResponse.ok) {
             const snapshot = (await snapshotResponse.json()) as GraphPayload;
+            if (
+              snapshot.nodes.length === 0 &&
+              currentModel.nodes.size > 0 &&
+              totalFromCounts(snapshot.meta?.counts) > 0
+            ) {
+              return;
+            }
             setGraphModel(buildGraphModel(snapshot));
             completedAtRef.current = null;
           }
