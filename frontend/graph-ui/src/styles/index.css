@@ -167,6 +167,18 @@
   min-height: 520px;
 }
 
+.dag-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--dag-muted);
+  font-size: 13px;
+  padding: 24px;
+  pointer-events: none;
+}
+
 .dag-layout-banner {
   position: absolute;
   top: 16px;

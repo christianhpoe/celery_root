@@ -169,10 +169,16 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
   }, [filteredModel.nodes, filteredModel.edges]);
   useEffect(() => {
     let active = true;
-    const shouldRelayout = lastLayoutKeyRef.current !== `${topologyKey}:${direction}`;
+    const layoutKey = `${topologyKey}:${direction}`;
+    const shouldRelayout = lastLayoutKeyRef.current !== layoutKey;
+    if (!shouldRelayout && layoutPositions) {
+      return () => {
+        active = false;
+      };
+    }
     if (shouldRelayout) {
       setIsLayouting(true);
-      lastLayoutKeyRef.current = `${topologyKey}:${direction}`;
+      lastLayoutKeyRef.current = layoutKey;
     }
     const layoutInput = buildReactFlowNodes(
       layoutNodesRef.current.values(),
@@ -219,7 +225,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
     return () => {
       active = false;
     };
-  }, [direction, topologyKey, filteredModel.edges]);
+  }, [direction, layoutPositions, topologyKey, filteredModel.edges]);
 
   useEffect(() => {
     if (!layoutPositions) {
@@ -290,9 +296,6 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
             const snapshot = (await snapshotResponse.json()) as GraphPayload;
             setGraphModel(buildGraphModel(snapshot));
             completedAtRef.current = null;
-            requestAnimationFrame(() => {
-              instanceRef.current?.fitView({ padding: 0.2 });
-            });
           }
         }
         return;
@@ -311,9 +314,6 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
             const snapshot = (await snapshotResponse.json()) as GraphPayload;
             setGraphModel(buildGraphModel(snapshot));
             completedAtRef.current = null;
-            requestAnimationFrame(() => {
-              instanceRef.current?.fitView({ padding: 0.2 });
-            });
           }
         }
         return;
@@ -438,7 +438,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
     setSelectedId(node.id);
   }, []);
 
-  const handleMove = useCallback((_event: unknown, viewport: { zoom: number }) => {
+  const handleMoveEnd = useCallback((_event: unknown, viewport: { zoom: number }) => {
     setZoom(viewport.zoom);
   }, []);
 
@@ -482,7 +482,6 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
             edges={rfEdges}
             nodeTypes={{ taskNode: TaskNode, chordNode: ChordJoinNode, groupNode: GroupNode }}
             edgeTypes={{ selfLoop: SelfLoopEdge }}
-            fitView
             nodesDraggable
             nodesConnectable={false}
             panOnScroll
@@ -491,7 +490,7 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
               instanceRef.current = instance;
             }}
             onNodeClick={handleNodeClick}
-            onMove={handleMove}
+            onMoveEnd={handleMoveEnd}
             onNodeMouseEnter={onNodeMouseEnter}
             onNodeMouseLeave={onNodeMouseLeave}
             onNodesChange={onNodesChange}
@@ -499,6 +498,13 @@ function GraphCanvas({ payload, options }: GraphAppProps) {
             <Controls />
             <Background gap={24} size={1} />
           </ReactFlow>
+          {filteredModel.nodes.size === 0 ? (
+            <div className="dag-empty">
+              {graphModel.nodes.size === 0
+                ? "No graph data available."
+                : "No nodes match the current filters."}
+            </div>
+          ) : null}
           {isLayouting ? <div className="dag-layout-banner">Relayouting…</div> : null}
         </div>
         <DetailsPanel
