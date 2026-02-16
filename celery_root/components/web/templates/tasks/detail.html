@@ -273,26 +273,33 @@ SPDX-License-Identifier: BSD-3-Clause
       var detailRoot = document.querySelector("[data-task-api-url]");
       var taskApiUrl = detailRoot ? detailRoot.getAttribute("data-task-api-url") : "";
       var taskId = detailRoot ? detailRoot.getAttribute("data-task-id") : "";
-      if (!taskApiUrl) {
+
+      function resolveTaskApiUrl() {
+        if (taskApiUrl) {
+          return taskApiUrl;
+        }
         if (taskId) {
           taskApiUrl = "/api/tasks/" + encodeURIComponent(taskId) + "/";
-        } else {
-          var pathMatch = window.location.pathname.match(/\\/tasks\\/([^/]+)\\/?$/);
-          if (pathMatch) {
-            taskApiUrl = "/api/tasks/" + encodeURIComponent(pathMatch[1]) + "/";
-          }
+          return taskApiUrl;
         }
+        var pathMatch = window.location.pathname.match(/\\/tasks\\/([^/]+)\\/?$/);
+        if (pathMatch) {
+          taskApiUrl = "/api/tasks/" + encodeURIComponent(pathMatch[1]) + "/";
+        }
+        return taskApiUrl;
       }
       var taskPayloadPromise = null;
 
       function fetchTaskPayload() {
-        if (!taskApiUrl) {
+        var resolved = resolveTaskApiUrl();
+        if (!resolved) {
           return Promise.resolve(null);
         }
         if (!taskPayloadPromise) {
-          taskPayloadPromise = fetch(taskApiUrl, {
+          taskPayloadPromise = fetch(resolved, {
             headers: { Accept: "application/json" },
             cache: "no-store",
+            credentials: "same-origin",
           })
             .then(function (response) {
               if (!response.ok) {
