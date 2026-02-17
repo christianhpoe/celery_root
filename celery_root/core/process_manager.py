@@ -196,7 +196,12 @@ class _ExporterProcess(Process):
             try:
                 item = self._event_queue.get_nowait()
             except Empty:
-                return
+                # multiprocessing.Queue uses a feeder thread; give it a brief
+                # chance to flush buffered items before declaring empty.
+                try:
+                    item = self._event_queue.get(timeout=0.01)
+                except Empty:
+                    return
             self._handle_event(exporter, logger, item)
 
     @staticmethod
