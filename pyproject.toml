@@ -100,12 +100,6 @@ dev = [
   "coverage>=7.13.4",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["celery_root"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"celery_root/py.typed" = "celery_root/py.typed"
-
 [tool.black]
 line-length = 120
 
@@ -145,6 +139,14 @@ log_cli_level = "ERROR"
 asyncio_mode = "auto"
 filterwarnings = []
 asyncio_default_fixture_loop_scope = "session"
+
+[tool.hatch.build.targets.sdist.force-include]
+"celery_root/components/web/static/graph/graph.js"="celery_root/components/web/static/graph/graph.js"
+"celery_root/components/web/static/graph/graph.css"="celery_root/components/web/static/graph/graph.css"
+
+[tool.hatch.build.targets.wheel.force-include]
+"celery_root/components/web/static/graph/graph.js"="celery_root/components/web/static/graph/graph.js"
+"celery_root/components/web/static/graph/graph.css"="celery_root/components/web/static/graph/graph.css"
 
 [build-system]
 requires = ["hatchling"]

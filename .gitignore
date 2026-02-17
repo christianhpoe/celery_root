@@ -32,7 +32,7 @@ logs/
 .vscode/
 .DS_Store
 /demo/data
-/celery_root/web/
+/celery_root/components/web/static/graph/
 .coverage
 coverage.xml
 /htmlcov/
