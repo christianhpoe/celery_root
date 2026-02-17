@@ -9,7 +9,11 @@ SPDX-License-Identifier: BSD-3-Clause
 {% extends "base.html" %}
 
 {% block content %}
-  <article class="detail-hero">
+  <article
+    class="detail-hero"
+    data-task-id="{{ task.task_id }}"
+    data-task-api-url="{% url 'api-task-detail' task.task_id %}"
+  >
     <div>
       <p class="eyebrow">Task lookup</p>
       <h2>{{ task.name }}</h2>
@@ -29,32 +33,13 @@ SPDX-License-Identifier: BSD-3-Clause
           {% csrf_token %}
           <button class="btn ghost" type="submit">Retry</button>
         </form>
-        <form method="post" action="{% url 'task-revoke' task.task_id %}">
-          {% csrf_token %}
-          <button class="btn ghost" type="submit">Revoke</button>
-        </form>
         <a class="btn ghost" href="{% url 'task-graph' task.task_id %}">Inspect graph</a>
       </div>
     </div>
   </article>
 
-  <section class="detail-grid detail-grid--compact">
-    <article class="detail-card detail-card--compact">
-      <h3>Execution flow</h3>
-      <div class="detail-runtime">
-        Retries: <strong>{{ task.retries|default:0 }}</strong>
-      </div>
-      <ol class="relation-list">
-        {% for entry in relations %}
-          <li>
-            <span>{{ entry.title }}</span>
-            <span class="badge badge-info">{{ entry.state }}</span>
-          </li>
-        {% endfor %}
-      </ol>
-    </article>
-
-    <article class="detail-card detail-card--compact">
+  <section class="detail-grid" style="margin-top: 1rem;">
+    <article class="detail-card">
       <h3>Relations</h3>
       <div class="relation-links">
         <div class="relation-block">
@@ -111,6 +96,7 @@ SPDX-License-Identifier: BSD-3-Clause
             type="button"
             data-copy-source="task-args-raw"
             data-copy-format="json"
+            data-copy-field="args"
           >
             Copy
           </button>
@@ -133,6 +119,7 @@ SPDX-License-Identifier: BSD-3-Clause
             type="button"
             data-copy-source="task-kwargs-raw"
             data-copy-format="json"
+            data-copy-field="kwargs"
           >
             Copy
           </button>
@@ -158,6 +145,7 @@ SPDX-License-Identifier: BSD-3-Clause
             type="button"
             data-copy-source="task-result-raw"
             data-copy-format="json"
+            data-copy-field="result"
           >
             Copy
           </button>
@@ -187,6 +175,7 @@ SPDX-License-Identifier: BSD-3-Clause
             type="button"
             data-copy-source="task-traceback-raw"
             data-copy-format="traceback"
+            data-copy-field="traceback"
           >
             Copy
           </button>
@@ -247,6 +236,26 @@ SPDX-License-Identifier: BSD-3-Clause
         });
       }
 
+      function normalizePayload(value, format) {
+        if (value === null || value === undefined) {
+          return "";
+        }
+        if (typeof value === "string") {
+          if (format === "json") {
+            try {
+              return JSON.stringify(JSON.parse(value), null, 2);
+            } catch (err) {
+              return value;
+            }
+          }
+          return value;
+        }
+        if (format === "traceback") {
+          return String(value);
+        }
+        return format === "json" ? JSON.stringify(value, null, 2) : JSON.stringify(value);
+      }
+
       function getCopyPayload(sourceId, format) {
         var script = document.getElementById(sourceId);
         var rawText = script ? script.textContent || "" : "";
@@ -255,28 +264,82 @@ SPDX-License-Identifier: BSD-3-Clause
         }
         try {
           var parsed = JSON.parse(rawText);
-          if (typeof parsed === "string") {
-            return parsed;
-          }
-          if (format === "json") {
-            return JSON.stringify(parsed, null, 2);
-          }
-          return JSON.stringify(parsed);
+          return normalizePayload(parsed, format);
         } catch (err) {
           return rawText;
         }
+      }
+
+      var detailRoot = document.querySelector("[data-task-api-url]");
+      var taskApiUrl = detailRoot ? detailRoot.getAttribute("data-task-api-url") : "";
+      var taskId = detailRoot ? detailRoot.getAttribute("data-task-id") : "";
+
+      function resolveTaskApiUrl() {
+        if (taskApiUrl) {
+          return taskApiUrl;
+        }
+        if (taskId) {
+          taskApiUrl = "/api/tasks/" + encodeURIComponent(taskId) + "/";
+          return taskApiUrl;
+        }
+        var pathMatch = window.location.pathname.match(/\\/tasks\\/([^/]+)\\/?$/);
+        if (pathMatch) {
+          taskApiUrl = "/api/tasks/" + encodeURIComponent(pathMatch[1]) + "/";
+        }
+        return taskApiUrl;
+      }
+      var taskPayloadPromise = null;
+
+      function fetchTaskPayload() {
+        var resolved = resolveTaskApiUrl();
+        if (!resolved) {
+          return Promise.resolve(null);
+        }
+        if (!taskPayloadPromise) {
+          taskPayloadPromise = fetch(resolved, {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+            credentials: "same-origin",
+          })
+            .then(function (response) {
+              if (!response.ok) {
+                throw new Error("task-fetch-failed");
+              }
+              return response.json();
+            })
+            .catch(function () {
+              return null;
+            });
+        }
+        return taskPayloadPromise;
+      }
+
+      function getCopyPayloadAsync(sourceId, format, field) {
+        var fallback = getCopyPayload(sourceId, format);
+        if (!taskApiUrl) {
+          return Promise.resolve(fallback);
+        }
+        return fetchTaskPayload().then(function (payload) {
+          if (!payload || !field || !(field in payload)) {
+            return fallback;
+          }
+          return normalizePayload(payload[field], format) || fallback;
+        });
       }
 
       var buttons = Array.from(document.querySelectorAll(".copy-btn[data-copy-source]"));
       buttons.forEach(function (button) {
         var sourceId = button.getAttribute("data-copy-source") || "";
         var format = button.getAttribute("data-copy-format") || "text";
+        var field = button.getAttribute("data-copy-field") || "";
         var defaultLabel = button.textContent || "Copy";
         var resetTimer = null;
 
         button.addEventListener("click", function () {
-          var text = getCopyPayload(sourceId, format);
-          copyText(text)
+          getCopyPayloadAsync(sourceId, format, field)
+            .then(function (text) {
+              return copyText(text);
+            })
             .then(function () {
               button.textContent = "Copied";
             })
