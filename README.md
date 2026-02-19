@@ -210,6 +210,20 @@ export CELERY_ROOT_MCP_ENABLED=1
 export CELERY_ROOT_MCP_AUTH_KEY="your-secret-token"
 ```
 
+Tools:
+
+- `fetch_schema`: database schema (tables + columns).
+- `db_info`: backend metadata.
+- `db_query`: read-only SQL access to Celery Root tables (`tasks`, `task_events`,
+  `task_relations`, `workers`, `worker_events`, `broker_queue_events`, `schedules`,
+  `schema_version`).
+- `stats`: dashboard metrics plus task runtime aggregates.
+
+Resources:
+
+- `resource://celery-root/health`: MCP health payload.
+- `resource://celery-root/db-catalog`: table catalog and example queries for `db_query`.
+
 Start the supervisor (or MCP server) and open the Settings page to copy client snippets.
 
 ## Development
