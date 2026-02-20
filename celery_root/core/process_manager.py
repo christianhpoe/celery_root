@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -19,6 +20,9 @@ from multiprocessing import Event, Process, Queue
 from pathlib import Path
 from queue import Empty
 from typing import TYPE_CHECKING, Protocol, cast
+
+from celery.apps.beat import Beat
+from celery.beat import Service
 
 from celery_root.config import set_settings
 from celery_root.core.db.manager import DBManager
@@ -30,6 +34,8 @@ from .event_listener import EventListener
 from .reconciler import Reconciler
 
 if TYPE_CHECKING:
+    from celery import Celery
+
     from celery_root.components.metrics.base import BaseMonitoringExporter
     from celery_root.config import CeleryRootConfig
     from celery_root.core.db.adapters.base import BaseDBController
@@ -67,6 +73,16 @@ class _UvicornServerInstance(Protocol):
 
 class _UvicornServerType(Protocol):
     def __call__(self, *, config: _UvicornConfigInstance) -> _UvicornServerInstance: ...
+
+
+class _BeatServiceFactory(Protocol):
+    def __call__(
+        self,
+        app: Celery,
+        max_interval: int | None = None,
+        schedule_filename: str | None = None,
+        scheduler_cls: str | None = None,
+    ) -> Service: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +263,76 @@ class _ExporterProcess(Process):
                 exporter.update_stats(item)
         except Exception:  # pragma: no cover - defensive
             logger.exception("Exporter failed to process event %r", item)
+
+
+class _RootBeat(Beat):
+    """Beat runner that keeps Root's logging configuration."""
+
+    def setup_logging(self, colorize: bool | None = None) -> None:  # noqa: ARG002,FBT001
+        return
+
+
+class _BeatProcess(Process):
+    def __init__(
+        self,
+        app_path: str,
+        config: CeleryRootConfig,
+        log_config: LogQueueConfig | None,
+    ) -> None:
+        """Create a Beat process wrapper for a single Celery app."""
+        super().__init__(daemon=True)
+        self._app_path = app_path
+        self._config = config
+        self._log_config = log_config
+        self._stop_event = Event()
+
+    def stop(self) -> None:
+        """Signal the beat process to stop."""
+        self._stop_event.set()
+
+    def run(self) -> None:
+        """Run Celery beat with the DB-backed scheduler."""
+        set_settings(self._config)
+        configure_subprocess_logging(self._log_config)
+        logger = logging.getLogger(__name__)
+        logger.info("Beat process starting for %s", self._app_path)
+
+        from celery_root.core.registry import WorkerRegistry  # noqa: PLC0415
+
+        registry = WorkerRegistry([self._app_path])
+        apps = registry.get_apps()
+        if not apps:
+            logger.error("Beat process could not load app %s", self._app_path)
+            return
+        app = apps[0]
+        app.conf.beat_scheduler = "celery_root.components.beat.db_scheduler:DatabaseScheduler"
+        beat_config = self._config.beat
+        if beat_config is not None and beat_config.db_refresh_seconds is not None:
+            app.conf.beat_db_refresh_seconds = beat_config.db_refresh_seconds
+
+        loglevel = log_level_name(self._log_config.level if self._log_config else None)
+        beat = _RootBeat(app=app, loglevel=loglevel, quiet=True)
+        beat.init_loader()
+        beat.set_process_title()
+        service_factory = cast("_BeatServiceFactory", Service)
+        service = service_factory(app, beat.max_interval, beat.schedule, beat.scheduler_cls)
+
+        def _watch_stop() -> None:
+            self._stop_event.wait()
+            logger.info("Beat process stopping for %s", self._app_path)
+            service.stop()
+
+        threading.Thread(target=_watch_stop, daemon=True).start()
+        try:
+            beat.install_sync_handler(service)
+            if beat.socket_timeout:
+                logger.debug("Setting default socket timeout to %r", beat.socket_timeout)
+                socket.setdefaulttimeout(beat.socket_timeout)
+            service.start()
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Beat process crashed for %s", self._app_path)
+        finally:
+            logger.info("Beat process stopped for %s", self._app_path)
 
 
 class _McpServerProcess(Process):
@@ -465,6 +551,21 @@ class ProcessManager:
             self._config,
             self._log_config,
         )
+        if self._config.beat is not None:
+            if not self._config.worker_import_paths:
+                self._logger.warning("Beat enabled but no worker import paths configured; skipping beat processes.")
+            else:
+                for path in self._config.worker_import_paths:
+                    cleaned = str(path).strip()
+                    if not cleaned:
+                        continue
+                    name = f"beat:{cleaned}"
+                    self._process_factories[name] = functools.partial(
+                        _BeatProcess,
+                        cleaned,
+                        self._config,
+                        self._log_config,
+                    )
         if self._config.frontend is not None:
             require_optional_scope("web")
             self._process_factories["web"] = functools.partial(

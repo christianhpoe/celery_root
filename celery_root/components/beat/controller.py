@@ -195,7 +195,7 @@ class BeatController:
         db = self._require_db()
         label = self._app_label
         schedules = db.get_schedules()
-        return [schedule for schedule in schedules if schedule.app is None or schedule.app == label]
+        return [schedule for schedule in schedules if schedule.app == label]
 
     def _save_django_schedule(self, schedule: Schedule) -> None:
         models = self._django_models()

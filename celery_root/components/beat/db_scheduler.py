@@ -104,7 +104,7 @@ class DatabaseScheduler(Scheduler):
         db = self._get_db()
         schedules = list(db.get_schedules())
         label = self._app_label or _resolve_app_name(self.app)
-        return [schedule for schedule in schedules if schedule.app is None or schedule.app == label]
+        return [schedule for schedule in schedules if schedule.app == label]
 
     def _load_schedules(self, schedules: Iterable[Schedule]) -> None:
         schedule_map: dict[str, _EntryLike] = {}

@@ -302,13 +302,23 @@ class DBManager(Process):
         if isinstance(exc, ValidationError):
             details = {"errors": exc.errors()}
         error = RpcError(code=code, message=message, details=details)
-        self._logger.info(
-            "DB RPC %s %s error=%s duration_ms=%.1f",
-            context.request_id,
-            context.op,
-            code,
-            context.duration_ms,
-        )
+        if code == "SERVER_ERROR":
+            self._logger.exception(
+                "DB RPC %s %s error=%s duration_ms=%.1f",
+                context.request_id,
+                context.op,
+                code,
+                context.duration_ms,
+                exc_info=exc,
+            )
+        else:
+            self._logger.info(
+                "DB RPC %s %s error=%s duration_ms=%.1f",
+                context.request_id,
+                context.op,
+                code,
+                context.duration_ms,
+            )
         response = RpcResponseEnvelope(
             request_id=context.request_id,
             ok=False,
