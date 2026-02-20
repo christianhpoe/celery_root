@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: 2026 Christian-Hauke Poensgen
+# SPDX-FileCopyrightText: 2026 Maximilian Dolling
+# SPDX-FileContributor: AUTHORS.md
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build frontend
+        run: |
+          npm --prefix frontend/graph-ui install
+          npm --prefix frontend/graph-ui run build
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Build package
+        run: uv build --no-sources
+
+      - name: Publish to PyPI
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+
+      - name: Upload artifacts to GitHub release
+        run: gh release upload "$GITHUB_REF_NAME" dist/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -17,6 +17,7 @@ from celery_root import (
     CeleryRoot,
     CeleryRootConfig,
     DatabaseConfigSqlite,
+    FrontendConfig,
     McpConfig,
     OpenTelemetryConfig,
     PrometheusConfig,
@@ -60,6 +61,7 @@ def main() -> None:
         beat=BeatConfig(),
         prometheus=PrometheusConfig(),
         mcp=McpConfig(port=5557, auth_key="development"),
+        frontend=FrontendConfig(port=5558, host="0.0.0.0"),
     )
     root = CeleryRoot(math_app, text_app, sleep_app, config=config, logger=logger)
     root.run()

@@ -6,7 +6,7 @@
 
 [project]
 name = "celery_root"
-version = "0.3.1"
+dynamic = ["version"]
 description = "Command & Control for Celery Workers"
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -148,6 +148,14 @@ asyncio_default_fixture_loop_scope = "session"
 "celery_root/components/web/static/graph/graph.js"="celery_root/components/web/static/graph/graph.js"
 "celery_root/components/web/static/graph/graph.css"="celery_root/components/web/static/graph/graph.css"
 
+[tool.hatch.version]
+source = "vcs"
+pattern = "^((?P<epoch>\\d+)!)?(?P<base>\\d+(\\.\\d+)*)"
+
+[tool.hatch.version.raw-options]
+version_scheme = "only-version"
+local_scheme = "no-local-version"
+
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
